@@ -31,12 +31,12 @@
 
     #particleCanvas {
       position: fixed;
-      top: 0; 
+      top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      z-index: -1; 
-      background: rgb(28, 75, 114); 
+      z-index: -1;
+      background: rgb(28, 75, 114);
     }
 
     .container {
@@ -63,7 +63,7 @@
 
     .fan-stack {
       position: relative;
-      display: inline-block; 
+      display: inline-block;
       width: 80px;
       height: 80px;
       margin-right: 20px;
@@ -74,8 +74,8 @@
       position: absolute;
       top: 0;
       left: 0;
-      width: 80px;            
-      height: 80px;           
+      width: 80px;
+      height: 80px;
       object-fit: contain;
     }
 
@@ -148,7 +148,7 @@
       margin-bottom: 20px;
       font-size: 16px;
     }
-    
+
     form input[type='submit'] {
       background-color: rgb(56, 137, 229);
       color: rgb(255, 255, 255);
@@ -176,7 +176,7 @@
     }
 
     .chart-container {
-      width: 500px; 
+      width: 500px;
       max-width: 100%;
       margin: 0 auto 2rem;
       text-align: center;
@@ -269,7 +269,7 @@
       content: "";
       height: 26px;
       width: 26px;
-      left: 4px; 
+      left: 4px;
       bottom: 4px;
       background-color: white;
       transition: 0.4s;
@@ -282,7 +282,7 @@
 
     input:checked + .slider:before {
       transform: translateX(26px);
-    } 
+    }
 
     .switch-with-label {
       display: flex;
@@ -329,23 +329,23 @@
           <div class="section" id="editSection" style="display:none;">
             <h3>Selected Point</h3>
             <label for="edit-temp">Temperature (°C):</label>
-            <input 
-              id="edit-temp" 
-              type="number" 
-              min="0" 
-              max="400" 
-              step="1" 
-              placeholder="e.g. 75" 
+            <input
+              id="edit-temp"
+              type="number"
+              min="0"
+              max="400"
+              step="1"
+              placeholder="e.g. 75"
             >
             <br/>
             <label for="edit-speed">Fan Speed (%):</label>
-            <input 
-              id="edit-speed" 
-              type="number" 
-              min="0" 
-              max="100" 
-              step="1" 
-              placeholder="e.g. 40" 
+            <input
+              id="edit-speed"
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              placeholder="e.g. 40"
             >
             <br/>
             <button id="editPointBtn">Change</button>
@@ -360,7 +360,7 @@
         </div>
       </div><!-- .form-container -->
     </div>
-    
+
     <div id="toggleTab" class="tab-content active">
       <div class="toggles-container">
         <form method='POST' onsubmit='return submitOptions();'>
@@ -385,7 +385,7 @@
 
           <input type='text' id='staticfanspeed' name='staticfanspeed' title='fan speed' type="number" min="0" max="100" step="1" placeholder="e.g. 40" >
 
-          <h2>Debuging</h2>
+          <h2>Debugging</h2>
           <div class="switch-with-label">
             <label class="switch">
               <input type="checkbox" id="debuging" name="debuging">
@@ -411,7 +411,7 @@
         </form>
       </div>
     </div>
-    <h2 id="firmwareversion">Firmware version: Expirimental ??.??.??</h2>
+    <h2 id="firmwareversion">Firmware version: Experimental ??.??.??</h2>
   </div> <!-- .container -->
 
   <script>
@@ -578,7 +578,7 @@
 
       for (let i = 0; i < totalPoints; i++) {
         if (i === selectedIndex) {
-          bgColors.push('red'); 
+          bgColors.push('red');
           radii.push(8);
         } else {
           bgColors.push('blue');
@@ -614,7 +614,7 @@
 
     function updateChart() {
       myChart.data.datasets[0].data = getChartDataPoints();
-      refreshStyles();         
+      refreshStyles();
       myChart.update();
     }
 
@@ -654,7 +654,7 @@
             if (elements.length > 0) {
               const firstElement = elements[0];
               const index = firstElement.index;
-              selectedIndex = index; 
+              selectedIndex = index;
 
               const chartData = myChart.data.datasets[0].data;
               const dataPoint = chartData[index];
@@ -812,7 +812,7 @@
     function connect() {
       for (let a = 0; a < particlesArray.length; a++) {
         for (let b = a; b < particlesArray.length; b++) {
-          let distance = (particlesArray[a].x - particlesArray[b].x) ** 2 
+          let distance = (particlesArray[a].x - particlesArray[b].x) ** 2
                        + (particlesArray[a].y - particlesArray[b].y) ** 2;
           if (distance < (canvas.width / 7) * (canvas.height / 7)) {
             let opacityValue = 1 - (distance / 20000);

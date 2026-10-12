@@ -19,7 +19,7 @@ extern "C"
     typedef struct GlobalVariablesStruct{
         char SSID[32];
         char APPW[63];
-        String FWVersion = "Stable 2025.2.13";
+        String FWVersion = "Stable 2026.01.29";
         String Host = "BLFLOW";
         bool started = false;
         int fanSpeed = 0;
