@@ -37,8 +37,8 @@ Once you have uploaded the firmware to your device, please visit the [dutchdevel
 
 In embedded applications, HTML content is efficiently stored in PROGMEM memory. To achieve this, .h files are generated from compressed HTML files for webpages (i.e., `src/www/setuppage.html`) that are run on the device.
 
-- The `compress_html.py` is used to compress HTML files and generate corresponding .h files and is integrated into the build process and executed as a pre-build step in `platform.ini`
-- The generated .h files should not be checked into git (see `.gitignore`)
+- `pre_build.py` runs automatically through `platformio.ini`, compressing web assets into `src/www/www.h` and regenerating the individual `fanpage.h` and `updatePage.h` headers used by the web server.
+- Rebuild after editing HTML so the generated headers and firmware contain the updated pages.
 
 ### License
 

@@ -10,7 +10,7 @@
 
 const char *configPath = "/blledconfig.json";
 
-void saveFileSystem(){
+bool saveFileSystem(){
     Serial.println(F("Saving config"));
     
     JsonDocument json;
@@ -33,14 +33,27 @@ void saveFileSystem(){
         item["speed"] = p.second;
     }
 
-    File configFile = LittleFS.open(configPath, "w");
+    // Replace the saved config only after the complete new file is written.
+    const char *tempPath = "/blledconfig.json.tmp";
+    File configFile = LittleFS.open(tempPath, "w");
     if (!configFile) {
         Serial.println(F("Failed to save config"));
-        return;
+        return false;
     }
-    serializeJson(json, configFile);
+    const size_t bytesWritten = serializeJson(json, configFile);
     configFile.close();
+    if (bytesWritten != measureJson(json)) {
+        LittleFS.remove(tempPath);
+        Serial.println(F("Failed to write complete config"));
+        return false;
+    }
+    if (!LittleFS.rename(tempPath, configPath)) {
+        LittleFS.remove(tempPath);
+        Serial.println(F("Failed to replace config"));
+        return false;
+    }
     Serial.println(F("Config Saved"));
+    return true;
 }
 
 void loadFileSystem(){
@@ -72,7 +85,7 @@ void loadFileSystem(){
     configFile.readBytes(buf.get(), size);
 
     JsonDocument json;
-    auto deserializeError = deserializeJson(json, buf.get());
+    auto deserializeError = deserializeJson(json, buf.get(), size);
 
     if (!deserializeError) {
         strcpy(globalVariables.SSID, json["ssid"]);

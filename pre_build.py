@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------- #
-#        Compress files in src/www directory into a single header file.        #
+#       Compress src/www assets into combined and individual page headers.    #
 # ---------------------------------------------------------------------------- #
 
 import gzip
@@ -9,6 +9,7 @@ import glob
 WWW_DIR = os.path.join("src", "www")
 OUTPUT_HEADER_NAME = "www.h"
 OUTPUT_HEADER_FILE = os.path.join(WWW_DIR, OUTPUT_HEADER_NAME)
+PAGE_HEADERS = {"fanpage.html": "fanpage.h", "updatepage.html": "updatePage.h"}
 
 SUPPORTED_EXTENSIONS = ["*.html", "*.js", "*.css", "*.svg", "*.png"]
 
@@ -33,7 +34,7 @@ def compress_and_generate_entry(input_file):
     # Compress in-memory, no temp file
     with open(input_file, "rb") as infile:
         data = infile.read()
-        compressed_data = gzip.compress(data, compresslevel=9)
+        compressed_data = gzip.compress(data, compresslevel=9, mtime=0)
 
     # ------------ Generate a C array name based on the file name ------------ #
     # array_name = os.path.basename(input_file).replace(".", "_")
@@ -62,14 +63,19 @@ def compress_files():
     for pattern in SUPPORTED_EXTENSIONS:
         files_to_process.update(glob.iglob(os.path.join(WWW_DIR, "**", pattern), recursive=True))
 
-    files_to_process = list(files_to_process)
+    files_to_process = sorted(files_to_process)
     if not files_to_process:
         print(f"☑️ No matching files found in {WWW_DIR}")
         exit(0)
 
     entries = []
     for fpath in files_to_process:
-        entries.append(compress_and_generate_entry(fpath))
+        entry = compress_and_generate_entry(fpath)
+        entries.append(entry)
+        page_header = PAGE_HEADERS.get(os.path.relpath(fpath, WWW_DIR))
+        if page_header:
+            with open(os.path.join(WWW_DIR, page_header), "w") as f:
+                f.write("#include <pgmspace.h>\n\n" + entry.rstrip() + "\n")
 
     with open(OUTPUT_HEADER_FILE, "w") as f:
         f.write("#ifndef WWW_H\n#define WWW_H\n\n#include <pgmspace.h>\n\n")

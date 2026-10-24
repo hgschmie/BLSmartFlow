@@ -14,7 +14,7 @@
 WebServer webServer(80);
 
 #include "../www/fanpage.h"
-#include "../www/updatepage.h"
+#include "../www/updatePage.h"
 
 bool isAuthorized() {
   return true; //webServer.authenticate("BLLC", printerConfig.webpagePassword);
@@ -111,7 +111,13 @@ void submitOptions(){
         printerConfig.debuging = (webServer.arg("debuging") == "on");
         printerConfig.debugingchange = (webServer.arg("debugingchange") == "on");
         printerConfig.mqttdebug = (webServer.arg("mqttdebug") == "on");
-        webServer.send(202);
+
+        if (!saveFileSystem()) {
+            webServer.send(500, "text/plain", "Failed to save settings to flash");
+            return;
+        }
+        webServer.send(200, "text/plain", "Settings saved");
+        return;
     };
     webServer.send(204);
 }
