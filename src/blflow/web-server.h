@@ -15,6 +15,7 @@ WebServer webServer(80);
 
 #include "../www/fanpage.h"
 #include "../www/updatePage.h"
+#include "../www/favicon.h"
 
 bool isAuthorized() {
   return true; //webServer.authenticate("BLLC", printerConfig.webpagePassword);
@@ -133,6 +134,10 @@ void setupWebserver(){
     Serial.println(F("Setting up webserver"));
     
     webServer.on("/", handleSetup);
+    webServer.on("/favicon.ico", HTTP_GET, []() {
+        webServer.sendHeader(F("Content-Encoding"), F("gzip"));
+        webServer.send_P(200, "image/x-icon", (const char*)favicon_ico_gz, (int)favicon_ico_gz_len);
+    });
     webServer.on("/submitOptions",HTTP_POST,submitOptions);
     webServer.on("/getOptions", handleGetOptions);
 

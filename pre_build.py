@@ -9,9 +9,13 @@ import glob
 WWW_DIR = os.path.join("src", "www")
 OUTPUT_HEADER_NAME = "www.h"
 OUTPUT_HEADER_FILE = os.path.join(WWW_DIR, OUTPUT_HEADER_NAME)
-PAGE_HEADERS = {"fanpage.html": "fanpage.h", "updatepage.html": "updatePage.h"}
+ASSET_HEADERS = {
+    "fanpage.html": "fanpage.h",
+    "updatepage.html": "updatePage.h",
+    "favicon.ico": "favicon.h",
+}
 
-SUPPORTED_EXTENSIONS = ["*.html", "*.js", "*.css", "*.svg", "*.png"]
+SUPPORTED_EXTENSIONS = ["*.html", "*.js", "*.css", "*.svg", "*.png", "*.ico"]
 
 MIME_TYPES = {
     ".css":  "text/css",
@@ -72,9 +76,9 @@ def compress_files():
     for fpath in files_to_process:
         entry = compress_and_generate_entry(fpath)
         entries.append(entry)
-        page_header = PAGE_HEADERS.get(os.path.relpath(fpath, WWW_DIR))
-        if page_header:
-            with open(os.path.join(WWW_DIR, page_header), "w") as f:
+        asset_header = ASSET_HEADERS.get(os.path.relpath(fpath, WWW_DIR))
+        if asset_header:
+            with open(os.path.join(WWW_DIR, asset_header), "w") as f:
                 f.write("#include <pgmspace.h>\n\n" + entry.rstrip() + "\n")
 
     with open(OUTPUT_HEADER_FILE, "w") as f:
