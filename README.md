@@ -7,6 +7,30 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 - Connects to Bambulab H2D,X1,X1C,P1P Or P1S
 - Controls Fans based on printer temperature
 
+### Changelog
+
+#### 1.0.3 — 2026-10-23
+
+- Added a transparent favicon by overlaying `smartflow_blades.png` on `smartflow_shell.png`, with 16, 32, 48, and 64 pixel sizes.
+- Embedded the favicon in the firmware, served it at `/favicon.ico`, and linked it from the HTML pages.
+- Updated the build script to regenerate the favicon header alongside the compressed HTML headers.
+
+#### 1.0.2 — 2026-10-23
+
+- Fixed blank settings fields by loading configuration immediately instead of waiting for external images to finish loading.
+- Added a visible error when settings cannot be loaded and disabled Save until loading succeeds, preventing accidental overwrites with empty values.
+- Stopped logging submitted credentials in the browser console.
+- Added regression tests for settings loading, failed requests, and saving before settings arrive.
+
+#### 1.0.1 (retracted) — 2026-10-23
+
+Retracted because the settings page could remain blank while waiting for external images to load. The saved configuration was still present; the loading problem was fixed in 1.0.2.
+
+- Fixed web settings persistence so changes to the printer access code are written to flash and survive a restart.
+- Confirmed a successful save only after writing the configuration, and returned an error when saving fails.
+- Added temporary-file writes to protect the previous configuration against incomplete writes, and bounded JSON parsing to the configuration file's size.
+- Updated the displayed firmware version and date, regenerated the HTML headers, and made future builds regenerate the page headers used by the web server.
+
 ### Development Environment
 
 To contribute to the Smartflow project, you'll need the following tools:
