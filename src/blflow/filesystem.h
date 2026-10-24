@@ -7,30 +7,38 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include "types.h"
+#include "fan-config.h"
+#include <memory>
 
 const char *configPath = "/blledconfig.json";
 
-bool saveFileSystem(){
+bool saveFileSystem(const PrinterConfig &config = printerConfig){
     Serial.println(F("Saving config"));
     
     JsonDocument json;
     json["ssid"] = globalVariables.SSID;
     json["appw"] = globalVariables.APPW;
-    json["printerIp"] = printerConfig.printerIP;
-    json["accessCode"] = printerConfig.accessCode;
-    json["serialNumber"] = printerConfig.serialNumber;
+    json["printerIp"] = config.printerIP;
+    json["accessCode"] = config.accessCode;
+    json["serialNumber"] = config.serialNumber;
     
-    json["bssi"] = printerConfig.BSSID;
+    json["bssi"] = config.BSSID;
     // Debugging
-    json["debuging"] = printerConfig.debuging;
-    json["debugingchange"] = printerConfig.debugingchange;
-    json["mqttdebug"] = printerConfig.mqttdebug;
-
-    JsonArray fanPoints = json.createNestedArray("fanPoints");
-    for (auto &p : printerConfig.fanGraph) {
-        JsonObject item = fanPoints.createNestedObject();
-        item["temp"]  = p.first;
-        item["speed"] = p.second;
+    json["debuging"] = config.debuging;
+    json["debugingchange"] = config.debugingchange;
+    json["mqttdebug"] = config.mqttdebug;
+    json["fansSynchronized"] = config.fansSynchronized;
+    json["staticFan"] = config.staticFan;
+    json["staticFanSpeed"] = config.staticFanSpeed;
+    writeFanCurve(json["fanPoints"].to<JsonArray>(), config.fanGraph);
+    if (!config.fanGraph2.empty()) {
+        writeFanCurve(json["fanPoints2"].to<JsonArray>(), config.fanGraph2);
+        json["staticFan2"] = config.staticFan2;
+        json["staticFanSpeed2"] = config.staticFanSpeed2;
+    }
+    if (json.overflowed()) {
+        Serial.println(F("Not enough memory to save config"));
+        return false;
     }
 
     // Replace the saved config only after the complete new file is written.
@@ -75,47 +83,52 @@ void loadFileSystem(){
         Serial.print(attempts);
         Serial.println(F(" retries"));
         
-        Serial.println(F("Clearing config"));
-        // LittleFS.remove(configPath);
-        saveFileSystem();
+        Serial.println(F("Keeping defaults; config file left unchanged"));
         return;
     }
     size_t size = configFile.size();
     std::unique_ptr<char[]> buf(new char[size]);
-    configFile.readBytes(buf.get(), size);
+    if (configFile.readBytes(buf.get(), size) != size) {
+        Serial.println(F("Incomplete config read; file left unchanged"));
+        configFile.close();
+        return;
+    }
 
     JsonDocument json;
     auto deserializeError = deserializeJson(json, buf.get(), size);
 
     if (!deserializeError) {
-        strcpy(globalVariables.SSID, json["ssid"]);
-        strcpy(globalVariables.APPW, json["appw"]);
-        strcpy(printerConfig.printerIP, json["printerIp"]);
-        strcpy(printerConfig.accessCode, json["accessCode"]);
-        strcpy(printerConfig.serialNumber, json["serialNumber"]);
-        strcpy(printerConfig.BSSID, json["bssi"]);
-
-        // Debugging
-        printerConfig.debuging = json["debuging"];
-        printerConfig.debugingchange = json["debugingchange"];
-        printerConfig.mqttdebug = json["mqttdebug"];
-
-        printerConfig.fanGraph.clear();
-
-        if (json.containsKey("fanPoints")) {
-            JsonArray arr = json["fanPoints"].as<JsonArray>();
-            for (JsonObject obj : arr) {
-            float temp  = obj["temp"]  | 0.0f;
-            int   speed = obj["speed"] | 0;
-            printerConfig.fanGraph.push_back(std::make_pair(temp, speed));
-            }
+        PrinterConfig loaded{};
+        snprintf(globalVariables.SSID, sizeof(globalVariables.SSID), "%s", json["ssid"] | "");
+        snprintf(globalVariables.APPW, sizeof(globalVariables.APPW), "%s", json["appw"] | "");
+        snprintf(loaded.printerIP, sizeof(loaded.printerIP), "%s", json["printerIp"] | "");
+        snprintf(loaded.accessCode, sizeof(loaded.accessCode), "%s", json["accessCode"] | "");
+        snprintf(loaded.serialNumber, sizeof(loaded.serialNumber), "%s", json["serialNumber"] | "");
+        snprintf(loaded.BSSID, sizeof(loaded.BSSID), "%s", json["bssi"] | "");
+        loaded.debuging = json["debuging"] | loaded.debuging;
+        loaded.debugingchange = json["debugingchange"] | loaded.debugingchange;
+        loaded.mqttdebug = json["mqttdebug"] | false;
+        loaded.fansSynchronized = json["fansSynchronized"] | true;
+        loaded.staticFan = json["staticFan"] | false;
+        loaded.staticFanSpeed = clampFanSpeed(json["staticFanSpeed"] | 0);
+        if (!readFanCurve(json["fanPoints"], loaded.fanGraph)) {
+            Serial.println(F("Missing or invalid Fan 1 curve; using default curve"));
         }
+        if (!json["fanPoints2"].isNull()) {
+            if (!readFanCurve(json["fanPoints2"], loaded.fanGraph2)) {
+                loaded.fanGraph2 = defaultFanCurve();
+                Serial.println(F("Invalid Fan 2 curve; using default curve"));
+            }
+            loaded.staticFan2 = json["staticFan2"] | false;
+            loaded.staticFanSpeed2 = clampFanSpeed(json["staticFanSpeed2"] | 0);
+        }
+        if (!loaded.fansSynchronized) initializeSecondFan(loaded);
+        printerConfig = std::move(loaded);
 
         Serial.println(F("Loaded config"));
     } else {
         Serial.println(F("Failed loading config"));
-        Serial.println(F("Clearing config"));
-        LittleFS.remove(configPath);
+        Serial.println(F("Keeping defaults; config file left unchanged"));
     }
 
     configFile.close();

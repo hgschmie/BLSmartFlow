@@ -2,9 +2,10 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Temperature vs Fan Speed</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BL Smart Flow+</title>
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --color-black: black;
@@ -96,6 +97,45 @@
       100% {
         transform: rotate(360deg);
       }
+    }
+
+    [hidden] { display: none !important; }
+    .logo-container { flex-wrap: wrap; justify-content: center; gap: 1rem; }
+    .fan-indicator { text-align: center; }
+    .fan-indicator .fan-stack { display: block; margin: 0 auto .35rem; }
+    .fan-label { display: block; font-size: .85rem; }
+    .fan-one { color: #73b9ff; }
+    .fan-two { color: #ffbe70; }
+    #settings-fields { border: 0; padding: 0; min-width: 0; width: 100%; }
+    #settings-form { width: 100%; }
+    .fan-features { margin: 1rem 0; }
+    .static-speed-row { display: flex; align-items: center; gap: .45rem; margin: .5rem 0; }
+    .static-speed-row > label:first-child { width: auto; flex: 1; font-size: .9rem; }
+    .static-speed-row .switch { width: 60px; flex: 0 0 60px; }
+    .static-speed-row input[type=number] { width: 4.3rem; padding: .4rem; min-width: 0; }
+    #settings-status, #curve-status, #mode-status { margin: .6rem 0; font-size: .9rem; }
+    #save-notice {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      max-width: calc(100% - 2rem);
+      padding: .85rem 1.2rem;
+      border-radius: 8px;
+      background: #236139;
+      color: var(--color-white);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, .3);
+      text-align: center;
+      pointer-events: none;
+    }
+    button:disabled, input:disabled { cursor: default; opacity: .55; }
+    .telemetry { margin-top: 1rem; }
+    .fangraph-container { width: 100%; }
+    @media (max-width: 400px) {
+      .toggles-container, .fangraph-container { padding: 12px; }
+      .container { padding: 1rem .5rem; }
+      .static-speed-row { gap: .25rem; }
     }
 
     /* TABS */
@@ -284,12 +324,22 @@
     input:checked + .slider:before {
       transform: translateX(26px);
     }
+    input:focus-visible + .slider { outline: 2px solid #1565c0; outline-offset: 3px; }
+    input:disabled + .slider { cursor: default; opacity: .55; }
 
     .switch-with-label {
       display: flex;
       align-items: center;
       /* gap: 0.5rem; */
     }
+    .labeled-switch {
+      gap: .5rem;
+      margin: .5rem 0;
+    }
+    .synchronization-row { display: flex; align-items: center; gap: 1rem; }
+    .synchronization-row > label { width: auto; flex: 1; min-width: 0; font-size: 1.5rem; color: inherit; }
+    .synchronization-row .labeled-switch { flex-shrink: 0; }
+    .switch-with-label .switch { width: 60px; flex: 0 0 60px; margin: .15rem; }
     .toggle-label {
       font-size: 1rem;
       user-select: none;
@@ -305,11 +355,21 @@
 
     <div class='logo-container'>
 
-      <div class="fan-stack">
-        <img class="fanshell" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_shell.png" alt="Shell">
-        <img class="fanblades" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_blades.png" alt="Blades">
+      <div id="fan1Indicator" class="fan-indicator">
+        <div class="fan-stack">
+          <img class="fanshell" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_shell.png" alt="Fan 1 shell">
+          <img id="blades1" class="fanblades" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_blades.png" alt="">
+        </div>
+        <span class="fan-label"><span id="fan1Label">Both fans</span>: <span id="fan1Percent">-</span>%</span>
       </div>
-      <span class='logo-text'>BL SmartFlow</span>
+      <div id="fan2Indicator" class="fan-indicator" hidden>
+        <div class="fan-stack">
+          <img class="fanshell" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_shell.png" alt="Fan 2 shell">
+          <img id="blades2" class="fanblades" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_blades.png" alt="">
+        </div>
+        <span class="fan-label"><span class="fan-two">Fan 2</span>: <span id="fan2Percent">-</span>%</span>
+      </div>
+      <span class='logo-text'>BL Smart Flow+</span>
     </div>
 
     <div class="tabs">
@@ -324,18 +384,32 @@
         </div>
         <div class="controls">
           <h2>Manage Data Points</h2>
+          <p id="mode-status" role="status"></p>
+          <p id="curve-status" role="status">Loading fan curves...</p>
+          <button id="retryCurves" hidden>Retry loading curves</button>
+          <div id="fanSelectorRow" hidden>
+            <label for="selectedFan">Edit curve:</label>
+            <div class="switch-with-label labeled-switch">
+              <span class="toggle-label" aria-hidden="true">Fan 1</span>
+              <label class="switch">
+                <input type="checkbox" id="selectedFan" role="switch" aria-label="Edit Fan 2 curve" disabled>
+                <span class="slider round"></span>
+              </label>
+              <span class="toggle-label" aria-hidden="true">Fan 2</span>
+            </div>
+          </div>
           <div class="section">
-            <button id="createPointBtn">Create New Point</button>
+            <button id="createPointBtn" disabled>Create New Point</button>
           </div>
           <div class="section" id="editSection" style="display:none;">
-            <h3>Selected Point</h3>
+            <h3 id="pointHeading">Selected Point</h3>
             <label for="edit-temp">Temperature (°C):</label>
             <input
               id="edit-temp"
               type="number"
               min="0"
               max="400"
-              step="1"
+              step="any"
               placeholder="e.g. 75"
             >
             <br/>
@@ -355,18 +429,20 @@
             </button>
           </div>
         </div>
-        <div class="section">
+        <div class="section telemetry">
           <div>Nozzle Temperature: <span id="tempValue">-</span> °C</div>
-          <div>Fan Speed: <span id="speedValue">-</span> %</div>
+          <div><span id="speedLabel">Both fans</span>: <span id="speedValue">-</span> %</div>
+          <div id="speed2Row" hidden>Fan 2: <span id="speedValue2">-</span> %</div>
         </div>
       </div><!-- .form-container -->
     </div>
 
     <div id="toggleTab" class="tab-content active">
       <div class="toggles-container">
-        <form method='POST' onsubmit='return submitOptions(event);'>
+        <form id='settings-form' method='POST' onsubmit='return submitOptions(event);'>
           <h1>Settings</h1>
           <p id="settings-status" role="status">Loading settings...</p>
+          <fieldset id="settings-fields" disabled>
           <h2>Printer Information</h2>
 
           <label>Printer IP:</label>
@@ -376,16 +452,41 @@
           <label>Printer Serial Number:</label>
           <input type='text' id='printerserial' name='serial' title='Enter the serial Number for your Bambulab Printer' value=''>
 
-          <h2>Features</h2>
-          <div class="switch-with-label">
-            <label class="switch">
-              <input type="checkbox" id="staticfan" name='staticfan'>
-              <span class="slider round"></span>
-            </label>
-            <span class="toggle-label">Static Fan Speed</span>
+          <div class="synchronization-row">
+            <label for="fansSynchronized">Synchronize Fans</label>
+            <div class="switch-with-label labeled-switch">
+              <span class="toggle-label" aria-hidden="true">Off</span>
+              <label class="switch">
+                <input type="checkbox" id="fansSynchronized" name="fansSynchronized" role="switch" aria-label="Synchronize Fans" checked>
+                <span class="slider round"></span>
+              </label>
+              <span class="toggle-label" aria-hidden="true">On</span>
+            </div>
           </div>
-
-          <input type='text' id='staticfanspeed' name='staticfanspeed' title='fan speed' type="number" min="0" max="100" step="1" placeholder="e.g. 40" >
+          <section class="fan-features">
+            <h2 id="fan1FeaturesTitle">Fans features</h2>
+            <div class="static-speed-row">
+              <label for="staticfan">Static Fan Speed</label>
+              <label class="switch">
+                <input type="checkbox" id="staticfan" name="staticfan" role="switch" aria-label="Fan 1 static speed On/Off">
+                <span class="slider round"></span>
+              </label>
+              <input type="number" id="staticfanspeed" name="staticfanspeed" min="0" max="100" step="1" value="0" required aria-label="Fan 1 static speed percent">
+              <span>%</span>
+            </div>
+          </section>
+          <section id="fan2Features" class="fan-features" hidden>
+            <h2>Fan 2 features</h2>
+            <div class="static-speed-row">
+              <label for="staticfan2">Static Fan Speed</label>
+              <label class="switch">
+                <input type="checkbox" id="staticfan2" name="staticfan2" role="switch" aria-label="Fan 2 static speed On/Off" disabled>
+                <span class="slider round"></span>
+              </label>
+              <input type="number" id="staticfanspeed2" name="staticfanspeed2" min="0" max="100" step="1" value="0" required aria-label="Fan 2 static speed percent" disabled>
+              <span>%</span>
+            </div>
+          </section>
 
           <h2>Debugging</h2>
           <div class="switch-with-label">
@@ -409,390 +510,387 @@
             </label>
             <span class="toggle-label">MQTT Logging</span>
           </div>
+          </fieldset>
           <input type='submit' id='saveOptions' value='Save' disabled>
         </form>
       </div>
     </div>
-    <h2 id="firmwareversion">Firmware Version: Stable 1.0.3 (2026.10.23)</h2>
+    <h2 id="firmwareversion">Firmware Version: Loading...</h2>
   </div> <!-- .container -->
+  <div id="save-notice" role="status" aria-live="polite" hidden></div>
 
   <script>
+    const $ = id => document.getElementById(id);
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
     let optionsLoaded = false;
+    let optionsSaving = false;
+    let fansSynchronized = true;
+    let fan2Configured = false;
+    let fan2DraftInitialized = false;
+    let curves = [[], []];
+    let curvesLoaded = false;
+    let curveSaving = false;
+    let curveRequest = 0;
+    let selectedFan = 0;
+    let selectedIndex = null;
+    let creatingPoint = false;
+    let myChart = null;
+    let saveNoticeTimer;
 
-    function submitOptions(event){
-      event.preventDefault();
-      if (!optionsLoaded) {
-        return false;
+    function hideSaveNotice() {
+      clearTimeout(saveNoticeTimer);
+      $('save-notice').hidden = true;
+      $('save-notice').textContent = '';
+    }
+
+    function showSaveNotice(message) {
+      hideSaveNotice();
+      $('save-notice').textContent = message;
+      $('save-notice').hidden = false;
+      saveNoticeTimer = setTimeout(hideSaveNotice, 4000);
+    }
+
+    function pendingModeChange() {
+      return $('fansSynchronized').checked !== fansSynchronized;
+    }
+
+    function canEditCurve() {
+      return optionsLoaded && curvesLoaded && myChart && !optionsSaving && !curveSaving && !pendingModeChange();
+    }
+
+    function renderFeatureSections() {
+      const synchronized = $('fansSynchronized').checked;
+      $('fan1FeaturesTitle').textContent = synchronized ? 'Fans features' : 'Fan 1 features';
+      $('fan2Features').hidden = synchronized;
+      $('staticfan2').disabled = synchronized || !optionsLoaded || optionsSaving;
+      $('staticfanspeed2').disabled = synchronized || !optionsLoaded || optionsSaving;
+    }
+
+    function updateControls() {
+      $('settings-fields').disabled = !optionsLoaded || optionsSaving;
+      $('saveOptions').disabled = !optionsLoaded || optionsSaving || curveSaving;
+      renderFeatureSections();
+      const editable = Boolean(canEditCurve());
+      $('selectedFan').disabled = !editable;
+      $('createPointBtn').disabled = !editable;
+      $('editPointBtn').disabled = !editable;
+      $('edit-temp').disabled = !editable;
+      $('edit-speed').disabled = !editable;
+      $('removePointBtn').disabled = !editable || creatingPoint || selectedIndex === null || curves[selectedFan].length <= 1;
+      $('retryCurves').disabled = !optionsLoaded || optionsSaving || curveSaving;
+      $('mode-status').textContent = optionsLoaded && pendingModeChange()
+        ? 'Save Settings to apply the synchronization change before editing curves.' : '';
+    }
+
+    function clearPointSelection() {
+      selectedIndex = null;
+      creatingPoint = false;
+      $('editSection').style.display = 'none';
+    }
+
+    function renderOperatingMode() {
+      $('fan2Indicator').hidden = fansSynchronized;
+      $('fan1Label').textContent = fansSynchronized ? 'Both fans' : 'Fan 1';
+      $('fan1Label').className = fansSynchronized ? '' : 'fan-one';
+      $('speedLabel').textContent = fansSynchronized ? 'Both fans' : 'Fan 1';
+      $('speed2Row').hidden = fansSynchronized;
+      $('fanSelectorRow').hidden = fansSynchronized;
+      if (fansSynchronized) {
+        selectedFan = 0;
       }
+      $('selectedFan').checked = selectedFan === 1;
+      clearPointSelection();
+      updateChart();
+      updateControls();
+    }
 
-      var xhr = new XMLHttpRequest();
-      xhr.open('POST', '/submitOptions', true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    function markSettingsChanged() {
+      if (!optionsLoaded || optionsSaving) return;
+      $('settings-status').textContent = 'Unsaved settings. Save to apply.';
+      updateControls();
+    }
 
-      xhr.onreadystatechange = function() {
-          if (xhr.readyState == 4 && xhr.status == 200) {
-              alert('Settings saved successfully!');
-          }
-      };
-
-      var formData = new FormData(document.querySelector('form'));
-      var parameters = [];
-      formData.forEach(function(value, key) {
-          parameters.push(encodeURIComponent(key) + '=' + encodeURIComponent(value));
-      });
-      var body = parameters.join('&');
-      xhr.send(body);
-
-      return false;
-    };
-
-    function updateOptions(){
-      var xhr = new XMLHttpRequest();
-      var status = document.getElementById('settings-status');
-      var saveButton = document.getElementById('saveOptions');
+    function updateOptions() {
       optionsLoaded = false;
-      saveButton.disabled = true;
-      status.textContent = 'Loading settings...';
-
+      $('settings-status').textContent = 'Loading settings...';
+      updateControls();
+      const xhr = new XMLHttpRequest();
       function loadFailed() {
-          status.textContent = 'Unable to load settings. Reload this page to retry.';
+        $('settings-status').textContent = 'Unable to load settings. Reload this page to retry.';
+        updateControls();
       }
-
       xhr.onreadystatechange = function() {
-          if (xhr.readyState === 4) {
-              if (xhr.status !== 200) {
-                  loadFailed();
-                  return;
-              }
-              var configData;
-              try {
-                  configData = JSON.parse(xhr.responseText);
-                  if (!configData || typeof configData !== 'object' ||
-                      typeof configData.ip !== 'string' ||
-                      typeof configData.code !== 'string' ||
-                      typeof configData.id !== 'string') {
-                      loadFailed();
-                      return;
-                  }
-              } catch (error) {
-                  loadFailed();
-                  return;
-              }
-              document.getElementById("firmwareversion").textContent = "Firmware Version: "+(configData.firmwareversion || "Unknown version");
-
-              document.getElementById('printerip').value = configData.ip || '';
-              document.getElementById('printercode').value = configData.code || '';
-              document.getElementById('printerserial').value = configData.id || '';
-
-              document.getElementById('staticfan').checked = configData.staticfans || false;
-              document.getElementById('staticfanspeed').value = configData.staticfanspeed || 0;
-
-              document.getElementById('debuging').checked = configData.debuging || false;
-              document.getElementById('debugingchange').checked = configData.debugingchange || false;
-              document.getElementById('mqttdebug').checked = configData.mqttdebug || false;
-              optionsLoaded = true;
-              saveButton.disabled = false;
-              status.textContent = '';
-          };
+        if (xhr.readyState !== 4) return;
+        if (xhr.status !== 200) { loadFailed(); return; }
+        let config;
+        try {
+          config = JSON.parse(xhr.responseText);
+          if (!config || typeof config.ip !== 'string' || typeof config.code !== 'string' || typeof config.id !== 'string') {
+            loadFailed(); return;
+          }
+        } catch (error) { loadFailed(); return; }
+        $('firmwareversion').textContent = 'Firmware Version: ' + (config.firmwareversion || 'Unknown version');
+        $('printerip').value = config.ip;
+        $('printercode').value = config.code;
+        $('printerserial').value = config.id;
+        fansSynchronized = config.fansSynchronized !== false;
+        fan2Configured = config.fan2Configured === true;
+        fan2DraftInitialized = false;
+        $('fansSynchronized').checked = fansSynchronized;
+        $('staticfan').checked = config.staticfans === true;
+        $('staticfanspeed').value = config.staticfanspeed || 0;
+        $('staticfan2').checked = fan2Configured ? config.staticfans2 === true : config.staticfans === true;
+        $('staticfanspeed2').value = fan2Configured ? (config.staticfanspeed2 || 0) : (config.staticfanspeed || 0);
+        for (const name of ['debuging', 'debugingchange', 'mqttdebug']) $(name).checked = config[name] === true;
+        optionsLoaded = true;
+        $('settings-status').textContent = '';
+        renderOperatingMode();
+        fetchFanConfig();
       };
       xhr.open('GET', '/getOptions', true);
       xhr.timeout = 30000;
       xhr.onerror = loadFailed;
       xhr.ontimeout = loadFailed;
       xhr.send();
-    };
-
-    tabButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        tabButtons.forEach(b => b.classList.remove('active'));
-        tabContents.forEach(tc => tc.classList.remove('active'));
-        btn.classList.add('active');
-        const targetTab = document.getElementById(btn.dataset.tab);
-        if (targetTab) {
-          targetTab.classList.add('active');
-        }
-      });
-    });
-
-    // This script follows the settings form; external images can still be loading.
-    updateOptions();
-  </script>
-
-  <script>
-    var data = {
-      "points": [
-        { "temp": 0,    "speed": 0   },
-        { "temp": 50,   "speed": 0   },
-        { "temp": 120,  "speed": 35  },
-        { "temp": 220,  "speed": 70  },
-        { "temp": 325,  "speed": 100 },
-        { "temp": 400,  "speed": 100 }
-      ]
-    };
-
-    function getInterpolatedSpeed(temp) {
-      const points = data.points;
-      if (temp <= points[0].temp) {
-        return points[0].speed;
-      }
-      if (temp >= points[points.length - 1].temp) {
-        return points[points.length - 1].speed;
-      }
-      for (let i = 0; i < points.length - 1; i++) {
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        if (temp >= p1.temp && temp <= p2.temp) {
-          const ratio = (temp - p1.temp) / (p2.temp - p1.temp);
-          return p1.speed + ratio * (p2.speed - p1.speed);
-        }
-      }
-      return 0;
     }
 
-    function fetchFanConfig() {
-      console.log("Fetching fan data from /getFanConfig...");
-      fetch("/getFanConfig")
-        .then(response => {
-          if (!response.ok) {
-            throw new Error("Network response was not ok: " + response.statusText);
-          }
-          return response.json();
-        })
-        .then(jsonData => {
-          if (jsonData && jsonData.points) {
-            data.points = jsonData.points;
-            console.log("Fetched config:", data.points);
-            updateChart();
-          } else {
-            console.error("Invalid JSON structure returned:", jsonData);
-          }
-        })
-        .catch(error => {
-          console.error("Error fetching /getFanConfig:", error);
-        });
-    }
-
-    const blades = document.querySelector('.fanblades');
-
-    function setSpin(speedPercent) {
-      speedPercent = Math.max(0, Math.min(speedPercent, 100));
-      if (speedPercent === 0) {
-        blades.style.animation = 'none';
+    function submitOptions(event) {
+      event.preventDefault();
+      if (!optionsLoaded || optionsSaving || curveSaving || !$('settings-form').reportValidity()) return false;
+      const parameters = new URLSearchParams(new FormData($('settings-form')));
+      parameters.set('fansSynchronized', $('fansSynchronized').checked ? 'on' : 'off');
+      parameters.set('staticfan', $('staticfan').checked ? 'on' : 'off');
+      if (!$('fansSynchronized').checked) {
+        parameters.set('staticfan2', $('staticfan2').checked ? 'on' : 'off');
       } else {
-        const duration = .5 + ((1 - (speedPercent / 100)) * 4.5);
-        blades.style.animation = `spin ${duration}s linear infinite`;
+        parameters.delete('staticfan2');
+        parameters.delete('staticfanspeed2');
       }
+      optionsSaving = true;
+      hideSaveNotice();
+      $('settings-status').textContent = 'Saving settings...';
+      updateControls();
+      const xhr = new XMLHttpRequest();
+      function saveFailed(message) {
+        optionsSaving = false;
+        $('settings-status').textContent = message || 'Unable to confirm the save. Reload settings before retrying.';
+        updateControls();
+      }
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState !== 4) return;
+        if (xhr.status !== 200) { saveFailed(xhr.responseText); return; }
+        optionsSaving = false;
+        showSaveNotice('Settings saved successfully.');
+        updateOptions();
+        fetchSensorData();
+      };
+      xhr.open('POST', '/submitOptions', true);
+      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+      xhr.timeout = 30000;
+      xhr.onerror = () => saveFailed();
+      xhr.ontimeout = () => saveFailed();
+      xhr.send(parameters.toString());
+      return false;
     }
 
-    function fetchSensorData(){
-      fetch("/sensorData")
-      .then(response => response.json())
-      .then(json => {
-        document.getElementById('tempValue').textContent = json.temp;
-        document.getElementById('speedValue').textContent = json.speed;
-        setSpin(json.speed);
-      })
-      .catch(err => console.error("Error fetching sensor data:", err));
-    }
-
-    var selectedIndex = null;
-    var myChart;
-
-    function sortPoints() {
-      data.points.sort((a, b) => a.temp - b.temp);
-    }
-
-    function getChartDataPoints() {
-      return data.points.map(p => ({ x: p.temp, y: p.speed }));
-    }
-
-    function refreshStyles() {
-      const totalPoints = data.points.length;
-      const bgColors = [];
-      const radii = [];
-
-      for (let i = 0; i < totalPoints; i++) {
-        if (i === selectedIndex) {
-          bgColors.push('red');
-          radii.push(8);
-        } else {
-          bgColors.push('blue');
-          radii.push(5);
+    function validatedCurve(points) {
+      if (!Array.isArray(points) || points.length === 0) throw new Error('At least one point is required.');
+      const sorted = points.map(point => {
+        if (!point || typeof point.temp !== 'number' || !Number.isFinite(point.temp) || point.temp < 0 || point.temp > 400 ||
+            !Number.isInteger(point.speed) || point.speed < 0 || point.speed > 100) {
+          throw new Error('Use temperatures from 0 to 400 and whole-number speeds from 0 to 100.');
         }
+        return { temp: point.temp, speed: point.speed };
+      }).sort((a, b) => a.temp - b.temp);
+      if (sorted.some((point, i) => i > 0 && point.temp === sorted[i - 1].temp)) throw new Error('Each temperature must be unique.');
+      return sorted;
+    }
+
+    async function fetchFanConfig() {
+      const request = ++curveRequest;
+      curvesLoaded = false;
+      clearPointSelection();
+      $('curve-status').textContent = 'Loading fan curves...';
+      $('retryCurves').hidden = true;
+      updateControls();
+      try {
+        const response = await fetch('/getFanConfig');
+        if (!response.ok) throw new Error('Unable to load fan curves.');
+        const config = await response.json();
+        const loaded = [validatedCurve(config.points), validatedCurve(config.points2 || config.points)];
+        if (request !== curveRequest) return;
+        curves = loaded;
+        fansSynchronized = config.fansSynchronized !== false;
+        curvesLoaded = true;
+        $('curve-status').textContent = myChart ? '' : 'Loading chart...';
+        renderOperatingMode();
+      } catch (error) {
+        if (request !== curveRequest) return;
+        $('curve-status').textContent = 'Unable to load fan curves. Retry before editing.';
+        $('retryCurves').hidden = false;
+        updateControls();
       }
-      myChart.data.datasets[0].pointBackgroundColor = bgColors;
-      myChart.data.datasets[0].pointRadius = radii;
-    }
-
-    function updateFanConfig() {
-      const formData = new URLSearchParams();
-      formData.append("points", JSON.stringify(data));
-
-      fetch("/updateFanConfig", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: formData.toString()
-      })
-        .then(response => response.text())
-        .then(text => console.log("Server response:", text))
-        .catch(error => console.error("Error updating fan config:", error));
-    }
-
-    function showEditSection() {
-      document.getElementById('editSection').style.display = 'block';
-    }
-    function hideEditSection() {
-      document.getElementById('editSection').style.display = 'none';
     }
 
     function updateChart() {
-      myChart.data.datasets[0].data = getChartDataPoints();
-      refreshStyles();
+      if (!myChart) return;
+      const colors = ['#1565c0', '#b85600'];
+      myChart.data.datasets = curves.slice(0, fansSynchronized ? 1 : 2).map((points, fan) => ({
+        label: fansSynchronized ? 'Both fans' : 'Fan ' + (fan + 1),
+        data: points.map(point => ({ x: point.temp, y: point.speed })),
+        borderColor: colors[fan],
+        borderDash: fan === 1 ? [7, 4] : [],
+        borderWidth: selectedFan === fan ? 3 : 2,
+        pointBackgroundColor: points.map((point, i) => selectedFan === fan && selectedIndex === i ? '#b00020' : colors[fan]),
+        pointRadius: points.map((point, i) => selectedFan === fan && selectedIndex === i ? 8 : 5),
+        fill: false
+      }));
       myChart.update();
     }
 
     function initChart() {
-      var fanCurveDataset = [{
-        data: getChartDataPoints(),
-        borderColor: 'blue',
-        backgroundColor: 'rgba(0, 0, 255, 0.1)',
-        fill: false
-      }];
-
-      var config = {
-        type: 'line',
-        data: { datasets: fanCurveDataset },
+      if (myChart) return;
+      if (typeof Chart === 'undefined') {
+        $('curve-status').textContent = 'Chart could not load. Check your connection and reload this page.';
+        return;
+      }
+      myChart = new Chart($('myChart'), {
+        type: 'line', data: { datasets: [] },
         options: {
           responsive: true,
           scales: {
-            x: {
-              type: 'linear',
-              position: 'bottom',
-              min: 0,
-              max: 400,
-              title: {
-                display: false
-              }
-            },
-            y: {
-              type: 'linear',
-              min: 0,
-              max: 100,
-              title: {
-                display: false
-              }
-            }
+            x: { type: 'linear', min: 0, max: 400, title: { display: true, text: 'Nozzle temperature (°C)' } },
+            y: { min: 0, max: 100, title: { display: true, text: 'Fan speed (%)' } }
           },
-          onClick: function(evt, elements) {
-            if (elements.length > 0) {
-              const firstElement = elements[0];
-              const index = firstElement.index;
-              selectedIndex = index;
-
-              const chartData = myChart.data.datasets[0].data;
-              const dataPoint = chartData[index];
-
-              showEditSection();
-
-              document.getElementById('edit-temp').value = dataPoint.x;
-              document.getElementById('edit-speed').value = dataPoint.y;
-
-              refreshStyles();
-              myChart.update();
-            }
+          onClick: (event, elements) => {
+            if (!canEditCurve()) return;
+            const point = elements.find(element => element.datasetIndex === selectedFan) || elements[0];
+            if (!point) return;
+            selectedFan = point.datasetIndex;
+            $('selectedFan').checked = selectedFan === 1;
+            selectedIndex = point.index;
+            creatingPoint = false;
+            $('pointHeading').textContent = 'Selected point — Fan ' + (selectedFan + 1);
+            $('editPointBtn').textContent = 'Change';
+            $('edit-temp').value = curves[selectedFan][selectedIndex].temp;
+            $('edit-speed').value = curves[selectedFan][selectedIndex].speed;
+            $('editSection').style.display = 'block';
+            updateChart();
+            updateControls();
           },
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                title: () => '',
-                label: function(context) {
-                  const xVal = context.parsed.x;
-                  const yVal = context.parsed.y;
-                  return `Temp: ${xVal}, Speed: ${yVal}`;
-                }
-              }
-            }
-          }
+          plugins: { legend: { onClick: () => {} } }
         }
-      };
-
-      myChart = new Chart(document.getElementById('myChart'), config);
-      refreshStyles();
-      myChart.update();
+      });
+      if (curvesLoaded) $('curve-status').textContent = '';
+      updateChart();
+      updateControls();
     }
 
-    hideEditSection();
+    async function saveCurve(points) {
+      if (!canEditCurve()) return;
+      let candidate;
+      try { candidate = validatedCurve(points); }
+      catch (error) { $('curve-status').textContent = error.message; return; }
+      const fan = selectedFan;
+      curveSaving = true;
+      hideSaveNotice();
+      $('curve-status').textContent = 'Saving Fan ' + (fan + 1) + ' curve...';
+      updateControls();
+      try {
+        const body = new URLSearchParams({ fan: String(fan + 1), points: JSON.stringify({ points: candidate }) });
+        const response = await fetch('/updateFanConfig', {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString()
+        });
+        if (!response.ok) throw new Error(await response.text() || 'Unable to save curve.');
+        curves[fan] = candidate;
+        clearPointSelection();
+        updateChart();
+        $('curve-status').textContent = '';
+        showSaveNotice('Fan ' + (fan + 1) + ' curve saved.');
+        fetchSensorData();
+      } catch (error) {
+        $('curve-status').textContent = error.message + ' The displayed saved curve has not changed.';
+      } finally {
+        curveSaving = false;
+        updateControls();
+      }
+    }
 
-    document.getElementById('createPointBtn').addEventListener('click', function() {
-      const defaultTemp = 25;
-      const defaultSpeed = 50;
+    function setSpin(fan, speed) {
+      const percent = Math.max(0, Math.min(100, speed));
+      $('blades' + fan).style.animation = percent === 0 ? 'none' : `spin ${.5 + (1 - percent / 100) * 4.5}s linear infinite`;
+    }
 
-      data.points.push({ temp: defaultTemp, speed: defaultSpeed });
-      sortPoints();
-      selectedIndex = data.points.findIndex(p => p.temp === defaultTemp && p.speed === defaultSpeed);
+    async function fetchSensorData() {
+      try {
+        const response = await fetch('/sensorData');
+        if (!response.ok) return;
+        const sensor = await response.json();
+        const speed2 = sensor.speed2 === undefined ? sensor.speed : sensor.speed2;
+        $('tempValue').textContent = sensor.temp;
+        $('speedValue').textContent = $('fan1Percent').textContent = sensor.speed;
+        $('speedValue2').textContent = $('fan2Percent').textContent = speed2;
+        setSpin(1, sensor.speed);
+        setSpin(2, speed2);
+      } catch (error) { console.error('Unable to refresh fan speeds:', error); }
+    }
 
-      updateChart();
-      updateFanConfig();
-
-      showEditSection();
-      document.getElementById('edit-temp').value = defaultTemp;
-      document.getElementById('edit-speed').value = defaultSpeed;
+    $('fansSynchronized').addEventListener('change', () => {
+      if (!$('fansSynchronized').checked && !fan2Configured && !fan2DraftInitialized) {
+        $('staticfan2').checked = $('staticfan').checked;
+        $('staticfanspeed2').value = $('staticfanspeed').value;
+        fan2DraftInitialized = true;
+      }
+      markSettingsChanged();
     });
-
-    document.getElementById('editPointBtn').addEventListener('click', function() {
-      if (selectedIndex === null) {
-        alert("Please select (or create) a point first.");
-        return;
-      }
-
-      const tempInput = document.getElementById('edit-temp');
-      const speedInput = document.getElementById('edit-speed');
-      const newTemp = parseFloat(tempInput.value);
-      const newSpeed = parseFloat(speedInput.value);
-
-      if (isNaN(newTemp) || isNaN(newSpeed)) {
-        alert("Please enter valid numbers for temperature and speed.");
-        return;
-      }
-
-      data.points[selectedIndex].temp = newTemp;
-      data.points[selectedIndex].speed = newSpeed;
-
-      sortPoints();
-      selectedIndex = data.points.findIndex(p => p.temp === newTemp && p.speed === newSpeed);
-
+    $('settings-form').addEventListener('input', markSettingsChanged);
+    $('selectedFan').addEventListener('change', () => {
+      selectedFan = fansSynchronized ? 0 : Number($('selectedFan').checked);
+      clearPointSelection();
       updateChart();
-      updateFanConfig();
+      updateControls();
     });
-
-    document.getElementById('removePointBtn').addEventListener('click', function() {
-      if (selectedIndex === null) {
-        alert("Please select (or create) a point first.");
-        return;
-      }
-
-      data.points.splice(selectedIndex, 1);
+    $('createPointBtn').addEventListener('click', () => {
+      if (!canEditCurve()) return;
       selectedIndex = null;
-
-      hideEditSection();
-      document.getElementById('edit-temp').value = '';
-      document.getElementById('edit-speed').value = '';
-
+      creatingPoint = true;
+      $('pointHeading').textContent = 'New point — Fan ' + (selectedFan + 1);
+      $('editPointBtn').textContent = 'Add point';
+      $('edit-temp').value = '';
+      $('edit-speed').value = 50;
+      $('editSection').style.display = 'block';
       updateChart();
-      updateFanConfig();
+      updateControls();
     });
-
-    window.addEventListener('DOMContentLoaded', () => {
-      fetchSensorData();
-      setInterval(fetchSensorData,5000);
-      initChart();
-      fetchFanConfig();
+    $('editPointBtn').addEventListener('click', () => {
+      if (!canEditCurve() || (!creatingPoint && selectedIndex === null)) return;
+      const point = { temp: Number($('edit-temp').value), speed: Number($('edit-speed').value) };
+      if ($('edit-temp').value === '' || $('edit-speed').value === '') {
+        $('curve-status').textContent = 'Enter a temperature and speed.'; return;
+      }
+      const points = curves[selectedFan].map(point => ({ ...point }));
+      if (creatingPoint) points.push(point);
+      else points[selectedIndex] = point;
+      saveCurve(points);
     });
+    $('removePointBtn').addEventListener('click', () => {
+      if (selectedIndex === null || !canEditCurve()) return;
+      saveCurve(curves[selectedFan].filter((point, index) => index !== selectedIndex));
+    });
+    $('retryCurves').addEventListener('click', fetchFanConfig);
+    tabButtons.forEach(button => button.addEventListener('click', () => {
+      tabButtons.forEach(item => item.classList.remove('active'));
+      tabContents.forEach(item => item.classList.remove('active'));
+      button.classList.add('active');
+      $(button.dataset.tab).classList.add('active');
+      if (myChart && button.dataset.tab === 'fanGraphTab') myChart.resize();
+    }));
+    window.addEventListener('DOMContentLoaded', initChart);
+    // Settings and telemetry start without waiting for images or the chart library.
+    updateOptions();
+    fetchSensorData();
+    setInterval(fetchSensorData, 5000);
   </script>
 
   <!-- PARTICLE BACKGROUND SCRIPT -->

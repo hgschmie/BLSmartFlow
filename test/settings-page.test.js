@@ -7,75 +7,133 @@ const vm = require('node:vm');
 
 const html = readFileSync(join(__dirname, '../src/www/fanpage.html'), 'utf8');
 const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
-  .map(match => match[1])
-  .find(script => script.includes('function updateOptions()'));
+  .map(match => match[1]).find(script => script.includes('function updateOptions()'));
+const settle = () => new Promise(resolve => setImmediate(resolve));
+const copy = value => JSON.parse(JSON.stringify(value));
+const points1 = [{ temp: 0, speed: 0 }, { temp: 200, speed: 60 }, { temp: 400, speed: 100 }];
+const points2 = [{ temp: 0, speed: 20 }, { temp: 200, speed: 40 }, { temp: 400, speed: 70 }];
+const baseConfig = {
+  firmwareversion: 'Stable 1.1.0 (2026.10.23)', ip: '192.0.2.83', code: '*****123', id: '************456',
+  staticfans: false, staticfanspeed: 0, debuging: true, debugingchange: false, mqttdebug: false,
+};
+const separateConfig = {
+  ...baseConfig, fansSynchronized: false, fan2Configured: true, staticfans2: true, staticfanspeed2: 69,
+};
 
-function loadPage() {
-  const elements = new Map([...html.matchAll(/\bid=['"]([^'"]+)['"]/g)]
-    .map(match => [match[1], { value: '', checked: false, textContent: '' }]));
-  const requests = [];
+function loadPage({ chartAvailable = true } = {}) {
+  const elements = new Map([...html.matchAll(/<[^>]+\bid=['"]([^'"]+)['"][^>]*>/g)].map(match => {
+    const tag = match[0];
+    const element = {
+      value: /\bvalue=['"]([^'"]*)['"]/.exec(tag)?.[1] || '',
+      name: /\bname=['"]([^'"]*)['"]/.exec(tag)?.[1],
+      type: /\btype=['"]([^'"]*)['"]/.exec(tag)?.[1],
+      checked: /\bchecked\b/.test(tag), disabled: /\bdisabled\b/.test(tag), hidden: /\bhidden\b/.test(tag),
+      textContent: '', style: {}, listeners: {},
+      addEventListener(event, handler) { this.listeners[event] = handler; },
+      reportValidity() { return true; },
+    };
+    return [match[1], element];
+  }));
+  const requests = [], fetches = [], events = {}, charts = [], timers = new Map();
+  let now = 0, timerId = 0;
   class XMLHttpRequest {
     constructor() { requests.push(this); }
     open(method, url) { this.method = method; this.url = url; }
-    send() {}
+    setRequestHeader() {}
+    send(body) { this.body = body; }
     respond(status, body) {
-      this.status = status;
-      this.responseText = body;
-      this.readyState = 4;
+      this.status = status; this.responseText = body; this.readyState = 4;
       this.onreadystatechange();
     }
   }
+  class FormData {
+    constructor() {
+      this.entries = [...elements.values()].filter(element => element.name && !element.disabled &&
+        (element.type !== 'checkbox' || element.checked)).map(element => [element.name, element.type === 'checkbox' ? 'on' : element.value]);
+    }
+    [Symbol.iterator]() { return this.entries[Symbol.iterator](); }
+  }
   const context = vm.createContext({
-    XMLHttpRequest,
-    // Resource load events deliberately never fire: external images may stall.
-    window: {},
+    XMLHttpRequest, FormData, URLSearchParams,
+    alert() { assert.fail('Unexpected blocking alert'); }, console: { error() {} }, setInterval() {},
+    setTimeout(callback, delay) { timers.set(++timerId, { callback, at: now + delay }); return timerId; },
+    clearTimeout(id) { timers.delete(id); },
+    fetch(url, options) {
+      return new Promise((resolve, reject) => fetches.push({ url, options, resolve, reject, done: false }));
+    },
+    window: { addEventListener(event, handler) { events[event] = handler; } },
     document: {
       querySelectorAll: () => [],
-      getElementById: id => {
-        assert.ok(elements.has(id), `Missing page element: ${id}`);
-        return elements.get(id);
-      },
+      getElementById(id) { assert.ok(elements.has(id), `Missing element: ${id}`); return elements.get(id); },
     },
+    ...(chartAvailable ? { Chart: class {
+      constructor(canvas, config) { this.data = config.data; this.options = config.options; charts.push(this); }
+      update() {}
+      resize() {}
+    } } : {}),
   });
   vm.runInContext(script, context);
-  return { context, elements, requests };
+  const page = {
+    context, elements, requests, fetches, events, charts,
+    get: id => elements.get(id),
+    advanceTime(milliseconds) {
+      now += milliseconds;
+      for (const [id, timer] of timers) {
+        if (timer.at <= now) { timers.delete(id); timer.callback(); }
+      }
+    },
+    state: name => JSON.parse(vm.runInContext(`JSON.stringify(${name})`, context)),
+    trigger(id, event) { elements.get(id).listeners[event]({ preventDefault() {} }); },
+    pending(url) { const request = fetches.find(request => request.url === url && !request.done); assert.ok(request, `No pending ${url}`); return request; },
+    async respond(url, body, status = 200) {
+      const request = this.pending(url); request.done = true;
+      request.resolve({ ok: status >= 200 && status < 300, json: async () => copy(body), text: async () => typeof body === 'string' ? body : JSON.stringify(body) });
+      await settle();
+    },
+  };
+  return page;
 }
 
-const config = {
-  firmwareversion: 'Stable 1.0.2 (2026.10.23)',
-  ip: '192.0.2.83',
-  code: '*****123',
-  id: '************456',
-  staticfans: false,
-  staticfanspeed: 0,
-  debuging: true,
-  debugingchange: false,
-  mqttdebug: false,
-};
+async function readyPage(config = baseConfig) {
+  const page = loadPage();
+  page.events.DOMContentLoaded();
+  page.requests[0].respond(200, JSON.stringify(config));
+  await page.respond('/getFanConfig', { points: points1, points2, fansSynchronized: config.fansSynchronized !== false });
+  await page.respond('/sensorData', { temp: 100, speed: 30, speed2: config.fansSynchronized === false ? 69 : 30 });
+  return page;
+}
 
-test('settings load without waiting for external images or window.onload', () => {
-  const { elements, requests } = loadPage();
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0].method, 'GET');
-  assert.equal(requests[0].url, '/getOptions');
-  assert.equal(elements.get('saveOptions').disabled, true);
-  requests[0].respond(200, JSON.stringify(config));
-  assert.equal(elements.get('printerip').value, config.ip);
-  assert.equal(elements.get('printercode').value, config.code);
-  assert.equal(elements.get('printerserial').value, config.id);
-  assert.equal(elements.get('debuging').checked, true);
-  assert.equal(elements.get('debugingchange').checked, false);
-  assert.equal(elements.get('saveOptions').disabled, false);
-  assert.equal(elements.get('settings-status').textContent, '');
-  assert.ok(elements.get('firmwareversion').textContent.includes(config.firmwareversion));
+test('settings load without waiting for external images or the chart library', () => {
+  const page = loadPage({ chartAvailable: false });
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, '/getOptions');
+  assert.equal(page.get('saveOptions').disabled, true);
+  page.requests[0].respond(200, JSON.stringify(baseConfig));
+  assert.equal(page.get('printerip').value, baseConfig.ip);
+  assert.equal(page.get('printercode').value, baseConfig.code);
+  assert.equal(page.get('printerserial').value, baseConfig.id);
+  assert.equal(page.get('debuging').checked, true);
+  assert.equal(page.get('saveOptions').disabled, false);
+  assert.equal(page.get('settings-status').textContent, '');
+  assert.ok(page.get('firmwareversion').textContent.includes(baseConfig.firmwareversion));
+  page.events.DOMContentLoaded();
+  assert.match(page.get('curve-status').textContent, /chart could not load/i);
+  assert.equal(page.get('createPointBtn').disabled, true);
+});
+
+test('legacy options default to one synchronized curve and feature section', async () => {
+  const page = await readyPage();
+  assert.equal(page.get('fansSynchronized').checked, true);
+  assert.equal(page.get('fan2Features').hidden, true);
+  assert.equal(page.get('fan2Indicator').hidden, true);
+  assert.equal(page.charts[0].data.datasets.length, 1);
+  assert.equal(page.charts[0].data.datasets[0].label, 'Both fans');
 });
 
 test('submitting before settings arrive cannot overwrite saved credentials', () => {
-  const { context, requests } = loadPage();
-  let prevented = false;
-  assert.equal(context.submitOptions({ preventDefault() { prevented = true; } }), false);
-  assert.equal(prevented, true);
-  assert.equal(requests.length, 1);
+  const page = loadPage(); let prevented = false;
+  assert.equal(page.context.submitOptions({ preventDefault() { prevented = true; } }), false);
+  assert.equal(prevented, true); assert.equal(page.requests.length, 1);
 });
 
 for (const [name, fail] of [
@@ -85,16 +143,227 @@ for (const [name, fail] of [
   ['network error', xhr => xhr.onerror()],
   ['timeout', xhr => xhr.ontimeout()],
 ]) {
-  test(`${name} shows an error and keeps Save disabled`, () => {
-    const { context, elements, requests } = loadPage();
-    assert.equal(requests[0].timeout, 30000);
-    fail(requests[0]);
-    assert.match(elements.get('settings-status').textContent, /unable to load/i);
-    assert.equal(elements.get('saveOptions').disabled, true);
-    // A subsequent successful load recovers the form.
-    context.updateOptions();
-    requests[1].respond(200, JSON.stringify(config));
-    assert.equal(elements.get('saveOptions').disabled, false);
-    assert.equal(elements.get('printerip').value, config.ip);
+  test(`${name} shows an error, keeps Save disabled, and permits recovery`, () => {
+    const page = loadPage();
+    assert.equal(page.requests[0].timeout, 30000);
+    fail(page.requests[0]);
+    assert.match(page.get('settings-status').textContent, /unable to load/i);
+    assert.equal(page.get('saveOptions').disabled, true);
+    page.context.updateOptions();
+    page.requests[1].respond(200, JSON.stringify(baseConfig));
+    assert.equal(page.get('saveOptions').disabled, false);
   });
 }
+
+test('independent mode is only applied after successful settings save and reload', async () => {
+  const page = await readyPage();
+  page.get('staticfan').checked = true; page.get('staticfanspeed').value = '37';
+  page.get('fansSynchronized').checked = false; page.trigger('fansSynchronized', 'change');
+  assert.equal(page.get('fan1FeaturesTitle').textContent, 'Fan 1 features');
+  assert.equal(page.get('fan2Features').hidden, false);
+  assert.equal(page.get('staticfan2').checked, true);
+  assert.equal(page.get('staticfanspeed2').value, '37');
+  assert.equal(page.get('fan2Indicator').hidden, true);
+  assert.equal(page.charts[0].data.datasets.length, 1);
+  assert.equal(page.get('createPointBtn').disabled, true);
+  assert.match(page.get('mode-status').textContent, /save settings/i);
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.get('fansSynchronized'), 'off');
+  assert.equal(body.get('staticfan2'), 'on');
+  assert.equal(body.get('staticfanspeed2'), '37');
+  assert.equal(page.get('settings-fields').disabled, true);
+  page.requests[1].respond(200, 'Settings saved');
+  page.requests[2].respond(200, JSON.stringify({ ...separateConfig, staticfans: true, staticfanspeed: 37, staticfanspeed2: 37 }));
+  await page.respond('/getFanConfig', { points: points1, points2: points1, fansSynchronized: false });
+  assert.equal(page.get('fan2Indicator').hidden, false);
+  assert.equal(page.charts[0].data.datasets.length, 2);
+  assert.equal(page.get('createPointBtn').disabled, false);
+});
+
+test('returning to synchronized mode omits hidden Fan 2 settings without clearing them', async () => {
+  const page = await readyPage(separateConfig);
+  assert.equal(page.get('fansSynchronized').checked, false);
+  page.get('fansSynchronized').checked = true; page.trigger('fansSynchronized', 'change');
+  assert.equal(page.get('fan2Features').hidden, true);
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.get('fansSynchronized'), 'on');
+  assert.equal(body.has('staticfan2'), false); assert.equal(body.has('staticfanspeed2'), false);
+  page.requests[1].respond(200, 'Settings saved');
+  page.requests[2].respond(200, JSON.stringify({ ...separateConfig, fansSynchronized: true }));
+  await page.respond('/getFanConfig', { points: points1, points2, fansSynchronized: true });
+  assert.equal(page.charts[0].data.datasets.length, 1);
+  page.get('fansSynchronized').checked = false; page.trigger('fansSynchronized', 'change');
+  assert.equal(page.get('staticfan2').checked, true);
+  assert.equal(page.get('staticfanspeed2').value, 69);
+});
+
+test('a failed settings save retains the active synchronized view and shows the error', async () => {
+  const page = await readyPage();
+  page.get('fansSynchronized').checked = false; page.trigger('fansSynchronized', 'change');
+  page.context.submitOptions({ preventDefault() {} });
+  page.requests[1].respond(500, 'Failed to save settings to flash');
+  assert.match(page.get('settings-status').textContent, /failed to save/i);
+  assert.equal(page.get('fan2Indicator').hidden, true);
+  assert.equal(page.charts[0].data.datasets.length, 1);
+  assert.equal(page.get('saveOptions').disabled, false);
+  assert.equal(page.get('save-notice').hidden, true);
+  page.advanceTime(5000);
+  assert.match(page.get('settings-status').textContent, /failed to save/i);
+});
+
+test('settings save shows a temporary notice that survives reloading settings', async () => {
+  const page = await readyPage();
+  page.context.submitOptions({ preventDefault() {} });
+  page.requests[1].respond(200, 'Settings saved');
+  assert.equal(page.get('save-notice').textContent, 'Settings saved successfully.');
+  assert.equal(page.get('save-notice').hidden, false);
+  page.requests[2].respond(200, JSON.stringify(baseConfig));
+  page.advanceTime(3999);
+  assert.equal(page.get('save-notice').hidden, false);
+  page.advanceTime(1);
+  assert.equal(page.get('save-notice').hidden, true);
+  assert.equal(page.get('save-notice').textContent, '');
+});
+
+test('a newer save receives a full notice duration and a failed save has no stale success', async () => {
+  const page = await readyPage(separateConfig);
+  page.context.saveCurve(points1);
+  await page.respond('/updateFanConfig', 'Saved');
+  page.advanceTime(3000);
+  page.context.saveCurve(points1);
+  assert.equal(page.get('save-notice').hidden, true);
+  await page.respond('/updateFanConfig', 'Saved');
+  page.advanceTime(1000);
+  assert.equal(page.get('save-notice').hidden, false);
+  page.advanceTime(3000);
+  assert.equal(page.get('save-notice').hidden, true);
+  page.context.saveCurve(points1);
+  await page.respond('/updateFanConfig', 'Saved');
+  page.context.saveCurve(points1);
+  await page.respond('/updateFanConfig', 'Flash write failed', 500);
+  page.advanceTime(5000);
+  assert.equal(page.get('save-notice').hidden, true);
+  assert.match(page.get('curve-status').textContent, /Flash write failed/);
+});
+
+test('clicking either curve switches the editor and switch to the clicked Fan', async () => {
+  const page = await readyPage(separateConfig);
+  for (const fan of [1, 0]) {
+    page.charts[0].options.onClick({}, [{ datasetIndex: fan, index: 1 }]);
+    assert.equal(page.state('selectedFan'), fan);
+    assert.equal(page.get('selectedFan').checked, fan === 1);
+    assert.equal(page.get('editSection').style.display, 'block');
+    assert.equal(page.get('pointHeading').textContent, 'Selected point — Fan ' + (fan + 1));
+    assert.equal(page.get('edit-temp').value, 200);
+    assert.equal(page.get('edit-speed').value, [60, 40][fan]);
+  }
+  page.get('edit-speed').value = '45';
+  page.trigger('editPointBtn', 'click');
+  const body = new URLSearchParams(page.pending('/updateFanConfig').options.body);
+  assert.equal(body.get('fan'), '1');
+  page.charts[0].options.onClick({}, [{ datasetIndex: 1, index: 1 }]);
+  assert.equal(page.state('selectedFan'), 0, 'Ignore clicks while saving');
+  await page.respond('/updateFanConfig', 'Saved');
+  assert.deepEqual(page.state('curves[1]'), points2);
+  assert.equal(page.state('curves[0][1].speed'), 45);
+});
+
+test('overlapping points prefer the currently selected Fan', async () => {
+  const page = await readyPage(separateConfig);
+  page.get('selectedFan').checked = true;
+  page.trigger('selectedFan', 'change');
+  page.charts[0].options.onClick({}, [{ datasetIndex: 0, index: 1 }, { datasetIndex: 1, index: 1 }]);
+  assert.equal(page.state('selectedFan'), 1);
+  assert.equal(page.get('edit-speed').value, 40);
+  page.charts[0].options.onClick({}, []);
+  assert.equal(page.state('selectedFan'), 1);
+  assert.equal(page.state('selectedIndex'), 1);
+});
+
+test('editing Fan 2 targets only Fan 2 and only changes the saved display on success', async () => {
+  const page = await readyPage(separateConfig);
+  page.get('selectedFan').checked = true; page.trigger('selectedFan','change');
+  page.charts[0].options.onClick({}, [{ datasetIndex: 1, index: 1 }]);
+  page.get('edit-temp').value = '180'; page.get('edit-speed').value = '55';
+  page.trigger('editPointBtn','click');
+  const request = page.pending('/updateFanConfig');
+  const body = new URLSearchParams(request.options.body);
+  assert.equal(body.get('fan'), '2');
+  assert.deepEqual(JSON.parse(body.get('points')).points[1], { temp: 180, speed: 55 });
+  assert.deepEqual(page.state('curves'), [points1, points2]);
+  assert.equal(page.get('selectedFan').disabled, true);
+  assert.equal(page.get('saveOptions').disabled, true);
+  await page.respond('/updateFanConfig', 'Fan curve saved');
+  assert.deepEqual(page.state('curves[0]'), points1);
+  assert.deepEqual(page.state('curves[1][1]'), { temp: 180, speed: 55 });
+  assert.equal(page.get('save-notice').textContent, 'Fan 2 curve saved.');
+  assert.equal(page.get('save-notice').hidden, false);
+  page.advanceTime(4000);
+  assert.equal(page.get('save-notice').hidden, true);
+});
+
+test('failed curve saves leave the previous curve visible', async () => {
+  const page = await readyPage(separateConfig);
+  page.get('selectedFan').checked = true; page.trigger('selectedFan','change');
+  const saving = page.context.saveCurve([{ temp: 10, speed: 80 }]);
+  await page.respond('/updateFanConfig','Flash write failed',500); await saving;
+  assert.deepEqual(page.state('curves'), [points1, points2]);
+  assert.match(page.get('curve-status').textContent, /flash write failed/i);
+  assert.equal(page.get('createPointBtn').disabled, false);
+});
+
+test('point creation, validation, and removal do not overwrite the other fan', async () => {
+  const page = await readyPage(separateConfig);
+  page.get('selectedFan').checked = true; page.trigger('selectedFan','change');
+  page.trigger('createPointBtn','click');
+  assert.equal(page.fetches.filter(r => r.url === '/updateFanConfig').length, 0);
+  page.get('edit-temp').value = '200'; page.get('edit-speed').value = '30';
+  page.trigger('editPointBtn','click');
+  assert.match(page.get('curve-status').textContent, /unique/i);
+  page.get('edit-temp').value = '100'; page.get('edit-speed').value = '30.5';
+  page.trigger('editPointBtn','click');
+  assert.match(page.get('curve-status').textContent, /whole-number/i);
+  assert.equal(page.fetches.filter(r => r.url === '/updateFanConfig').length, 0);
+  page.get('edit-speed').value = '30'; page.trigger('editPointBtn','click');
+  await page.respond('/updateFanConfig','Saved');
+  assert.equal(page.state('curves[1]').length, 4);
+  assert.deepEqual(page.state('curves[0]'),points1);
+  page.charts[0].options.onClick({}, [{ datasetIndex: 1, index: 1 }]);
+  page.trigger('removePointBtn','click'); await page.respond('/updateFanConfig','Saved');
+  assert.deepEqual(page.state('curves'),[points1,points2]);
+  await page.context.saveCurve([]);
+  assert.match(page.get('curve-status').textContent, /at least one/i);
+});
+
+test('sensor data controls two distinct animations and speed labels', async () => {
+  const page = await readyPage(separateConfig);
+  const polling = page.context.fetchSensorData();
+  await page.respond('/sensorData', { temp: 180, speed: 0, speed2: 100 }); await polling;
+  assert.equal(page.get('blades1').style.animation,'none');
+  assert.equal(page.get('blades2').style.animation,'spin 0.5s linear infinite');
+  assert.equal(page.get('fan1Percent').textContent,0);
+  assert.equal(page.get('fan2Percent').textContent,100);
+});
+
+test('curve loading failures disable editing and successful retry restores it', async () => {
+  const page = loadPage(); page.events.DOMContentLoaded();
+  page.requests[0].respond(200, JSON.stringify(separateConfig));
+  assert.equal(page.get('createPointBtn').disabled, true);
+  await page.respond('/getFanConfig', {},500);
+  assert.equal(page.get('retryCurves').hidden, false);
+  assert.equal(page.get('createPointBtn').disabled, true);
+  page.trigger('retryCurves','click');
+  await page.respond('/getFanConfig',{ points: points1, points2, fansSynchronized: false });
+  assert.equal(page.get('createPointBtn').disabled,false);
+});
+
+test('switching the editing selector clears the previous point selection', async () => {
+  const page = await readyPage(separateConfig);
+  page.charts[0].options.onClick({}, [{ datasetIndex: 0, index: 1 }]);
+  assert.equal(page.get('editSection').style.display,'block');
+  page.get('selectedFan').checked = true; page.trigger('selectedFan','change');
+  assert.equal(page.get('editSection').style.display,'none');
+  assert.equal(page.state('selectedIndex'),null);
+});

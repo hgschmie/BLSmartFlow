@@ -40,17 +40,10 @@ String toJson<bool>(bool val) {
     return val ? "true" : "false";
 }
 
-char* obfuscate(const char* charstring) {
-    int length = strlen(charstring); 
-    char* blurredstring = new char[length + 1]; 
-    strcpy(blurredstring, charstring); 
-    if (length > 3) {
-        for (int i = 0; i < length - 3; i++) {
-            blurredstring[i] = '*'; 
-        }
-    }
-    blurredstring[length] = '\0'; 
-    return blurredstring; 
+String obfuscate(const char* value) {
+    String result(value);
+    for (size_t i = 0; i + 3 < result.length(); ++i) result[i] = '*';
+    return result;
 }
 
 void handleGetOptions(){
@@ -69,6 +62,11 @@ void handleGetOptions(){
 
     doc["staticfans"] = printerConfig.staticFan;
     doc["staticfanspeed"] = printerConfig.staticFanSpeed;
+    doc["fansSynchronized"] = printerConfig.fansSynchronized;
+    const bool fan2Configured = !printerConfig.fanGraph2.empty();
+    doc["fan2Configured"] = fan2Configured;
+    doc["staticfans2"] = fan2Configured ? printerConfig.staticFan2 : printerConfig.staticFan;
+    doc["staticfanspeed2"] = fan2Configured ? printerConfig.staticFanSpeed2 : printerConfig.staticFanSpeed;
 
     // Debugging
     doc["debuging"] = printerConfig.debuging;
@@ -83,44 +81,127 @@ void handleGetOptions(){
     Serial.println(F("Packet sent to setuppage"));
 }
 
-void submitOptions(){
-    if (webServer.args() > 0) {
+// All web updates are staged, persisted, then applied to the running controller.
+bool readSpeedArgument(const char *name, int &speed) {
+    if (!webServer.hasArg(name)) return true;
+    const String value = webServer.arg(name);
+    if (value.length() == 0 || value.length() > 3) return false;
+    for (size_t i = 0; i < value.length(); ++i) {
+        if (value[i] < '0' || value[i] > '9') return false;
+    }
+    const int parsed = value.toInt();
+    if (parsed > 100) return false;
+    speed = parsed;
+    return true;
+}
 
-        String ipStr = webServer.arg("ip");
-        String codeStr = webServer.arg("code");
-        String serialStr = webServer.arg("serial");
+bool readBoolArgument(const char *name, bool &value) {
+    if (!webServer.hasArg(name)) return true;
+    const String arg = webServer.arg(name);
+    if (arg == "on" || arg == "true") value = true;
+    else if (arg == "off" || arg == "false") value = false;
+    else return false;
+    return true;
+}
 
-        if (ipStr.indexOf('*') == -1){
-            strcpy(printerConfig.printerIP,ipStr.c_str());
-        };
+template <size_t N>
+bool readStringArgument(const char *name, char (&value)[N]) {
+    if (!webServer.hasArg(name)) return true;
+    const String arg = webServer.arg(name);
+    if (arg.indexOf('*') != -1) return true;
+    if (arg.length() >= N) return false;
+    strcpy(value, arg.c_str());
+    return true;
+}
 
-        if (codeStr.indexOf('*') == -1){
-            strcpy(printerConfig.accessCode,codeStr.c_str());
-        };
-
-        if (serialStr.indexOf('*') == -1){
-            char temperserial[20];
-            strcpy(temperserial,serialStr.c_str());
-            for (int x=0; x<strlen(temperserial); x++)
-                temperserial[x] = toupper(temperserial[x]);
-            strcpy(printerConfig.serialNumber,temperserial);
-        };
-
-        printerConfig.staticFan = (webServer.arg("staticfan") == "on");
-        printerConfig.staticFanSpeed = webServer.arg("staticfanspeed").toInt();
-
-        printerConfig.debuging = (webServer.arg("debuging") == "on");
-        printerConfig.debugingchange = (webServer.arg("debugingchange") == "on");
-        printerConfig.mqttdebug = (webServer.arg("mqttdebug") == "on");
-
-        if (!saveFileSystem()) {
-            webServer.send(500, "text/plain", "Failed to save settings to flash");
+void submitOptions() {
+    if (webServer.args() == 0) {
+        webServer.send(204);
+        return;
+    }
+    PrinterConfig candidate = printerConfig;
+    if (!readStringArgument("ip", candidate.printerIP) ||
+        !readStringArgument("code", candidate.accessCode) ||
+        !readStringArgument("serial", candidate.serialNumber)) {
+        webServer.send(400, "text/plain", "Printer field is too long");
+        return;
+    }
+    for (size_t i = 0; i < strlen(candidate.serialNumber); ++i) {
+        candidate.serialNumber[i] = toupper(static_cast<unsigned char>(candidate.serialNumber[i]));
+    }
+    // Legacy forms omit unchecked Fan 1 checkboxes.
+    candidate.staticFan = false;
+    if (!readBoolArgument("fansSynchronized", candidate.fansSynchronized) ||
+        !readBoolArgument("staticfan", candidate.staticFan) ||
+        !readSpeedArgument("staticfanspeed", candidate.staticFanSpeed)) {
+        webServer.send(400, "text/plain", "Invalid fan settings; speeds must be integers from 0 to 100");
+        return;
+    }
+    if (!candidate.fansSynchronized) {
+        initializeSecondFan(candidate);
+        if (!readBoolArgument("staticfan2", candidate.staticFan2) ||
+            !readSpeedArgument("staticfanspeed2", candidate.staticFanSpeed2)) {
+            webServer.send(400, "text/plain", "Invalid Fan 2 settings; speed must be an integer from 0 to 100");
             return;
         }
-        webServer.send(200, "text/plain", "Settings saved");
+    }
+    candidate.debuging = (webServer.arg("debuging") == "on");
+    candidate.debugingchange = (webServer.arg("debugingchange") == "on");
+    candidate.mqttdebug = (webServer.arg("mqttdebug") == "on");
+    if (!saveFileSystem(candidate)) {
+        webServer.send(500, "text/plain", "Failed to save settings to flash");
         return;
-    };
-    webServer.send(204);
+    }
+    printerConfig = std::move(candidate);
+    webServer.send(200, "text/plain", "Settings saved");
+}
+
+void handleGetFanConfig() {
+    JsonDocument doc;
+    doc["fansSynchronized"] = printerConfig.fansSynchronized;
+    writeFanCurve(doc["points"].to<JsonArray>(), printerConfig.fanGraph);
+    writeFanCurve(doc["points2"].to<JsonArray>(), printerConfig.fanGraph2.empty()
+                 ? printerConfig.fanGraph : printerConfig.fanGraph2);
+    String response;
+    serializeJson(doc, response);
+    webServer.send(200, "application/json", response);
+}
+
+void handleUpdateFanConfig() {
+    const String fan = webServer.hasArg("fan") ? webServer.arg("fan") : String("1");
+    if ((fan != "1" && fan != "2") || !webServer.hasArg("points")) {
+        webServer.send(400, "text/plain", "Supply points and a fan number of 1 or 2");
+        return;
+    }
+    JsonDocument doc;
+    FanCurve curve;
+    if (deserializeJson(doc, webServer.arg("points")) || !readFanCurve(doc["points"], curve)) {
+        webServer.send(400, "text/plain", "Use unique temperatures from 0 to 400 and integer speeds from 0 to 100; at least one point is required");
+        return;
+    }
+    PrinterConfig candidate = printerConfig;
+    if (fan == "2") {
+        initializeSecondFan(candidate);
+        candidate.fanGraph2 = std::move(curve);
+    } else {
+        candidate.fanGraph = std::move(curve);
+    }
+    if (!saveFileSystem(candidate)) {
+        webServer.send(500, "text/plain", "Failed to save fan curve to flash");
+        return;
+    }
+    printerConfig = std::move(candidate);
+    webServer.send(200, "text/plain", "Fan curve saved");
+}
+
+void handleSensorData() {
+    JsonDocument doc;
+    doc["temp"] = printerVariables.nozzletemp;
+    doc["speed"] = globalVariables.fanSpeed;
+    doc["speed2"] = globalVariables.fanSpeed2;
+    String response;
+    serializeJson(doc, response);
+    webServer.send(200, "application/json", response);
 }
 
 void setupWebserver(){
@@ -168,58 +249,9 @@ void setupWebserver(){
         }
     });
 
-     webServer.on("/getFanConfig", HTTP_GET, []() { //Send Fangraph data
-        String json = "{\"points\":[";
-        for (size_t i = 0; i < printerConfig.fanGraph.size(); i++) {
-        json += "{\"temp\":" + String(printerConfig.fanGraph[i].first) + ",\"speed\":" + String(printerConfig.fanGraph[i].second) + "}";
-        if (i < printerConfig.fanGraph.size() - 1) json += ",";
-        }
-        json += "]}";
-        webServer.send(200, "application/json", json);
-    });
-
-    webServer.on("/updateFanConfig", HTTP_POST, []() { //Receive Updated Fangraph Data
-        if (webServer.args() == 0) {
-        webServer.send(400, "text/plain", "No parameters received");
-        return;
-        }
-        if (!webServer.hasArg("points")) {
-        webServer.send(400, "text/plain", "Missing 'points' parameter");
-        return;
-        }
-        String pointsJson = webServer.arg("points");
-
-        JsonDocument doc;
-
-        DeserializationError error = deserializeJson(doc, pointsJson);
-        if (error) {
-        webServer.send(400, "text/plain", "Error parsing JSON in 'points' parameter");
-        return;
-        }
-
-        printerConfig.fanGraph.clear();
-
-        JsonArray array = doc["points"].as<JsonArray>();
-
-        for (JsonObject obj : array) {
-            float temp  = obj["temp"]  | 0.0f;
-            int speed   = obj["speed"] | 0;
-            printerConfig.fanGraph.push_back(std::make_pair(temp, speed));
-        }
-
-        webServer.send(200, "text/plain", "Points updated OK");
-
-        saveFileSystem();
-    });
-
-    webServer.on("/sensorData", HTTP_GET, []() { //Send Current Sensor Info
-        String jsonResponse = "{";
-        jsonResponse += "\"temp\":" + String(printerVariables.nozzletemp, 2) + ",";  // 2 decimal places
-        jsonResponse += "\"speed\":" + String(globalVariables.fanSpeed);
-        jsonResponse += "}";
-
-        webServer.send(200, "application/json", jsonResponse);
-    });
+    webServer.on("/getFanConfig", HTTP_GET, handleGetFanConfig);
+    webServer.on("/updateFanConfig", HTTP_POST, handleUpdateFanConfig);
+    webServer.on("/sensorData", HTTP_GET, handleSensorData);
 
     webServer.begin();
 

@@ -1,6 +1,9 @@
 #ifndef _TYPES
 #define _TYPES
 
+#include <Arduino.h>
+#include "fan-curve.h"
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -19,10 +22,11 @@ extern "C"
     typedef struct GlobalVariablesStruct{
         char SSID[32];
         char APPW[63];
-        String FWVersion = "Stable " STRVERSION " (2026.10.23)";
+        String FWVersion = "Stable " STRVERSION " (" STRBUILDDATE ")";
         String Host = "BLFLOW";
         bool started = false;
         int fanSpeed = 0;
+        int fanSpeed2 = 0;
     } GlobalVariables;
     GlobalVariables globalVariables;
 
@@ -40,17 +44,15 @@ extern "C"
         bool debugingchange = true;     //Default debugging level - to shows onChange
         bool mqttdebug = false;         //Writes each packet from BBLP to the serial log
 
-        bool staticFan = false;  
+        bool fansSynchronized = true;
+        bool staticFan = false;
         int staticFanSpeed = 0;
+        bool staticFan2 = false;
+        int staticFanSpeed2 = 0;
 
-        std::vector<std::pair<float, int>> fanGraph = { //Basic fan speed profile
-            {0, 0},
-            {50, 0},
-            {180, 50},
-            {245, 80},
-            {350, 100},
-            {400, 100}
-        };
+        FanCurve fanGraph = defaultFanCurve();
+        // Empty until independent settings are first saved; then retained in sync mode.
+        FanCurve fanGraph2;
 
     } PrinterConfig;
     PrinterConfig printerConfig;

@@ -13,7 +13,7 @@ MERGED_BIN = os.path.normpath(os.path.join(BUILD_DIR, f"{PROGNAME}_merged.bin"))
 BOARD_CONFIG = env.BoardConfig()
 
 project_name = env.GetProjectOption("custom_project_name") or "Firmware"
-version = env.GetProjectOption("custom_version") or "0.0.0"
+version = env["FIRMWARE_VERSION"]
 firmware_filename_merged = f"{project_name}_V{version}.bin"
 firmware_filename_ota = f"{project_name}_V{version}.bin.ota"
 

@@ -1,47 +1,31 @@
 #ifndef _FAN
-#define _Fan
+#define _FAN
 
 #include "types.h"
 
 const int FanPower1 = 17;
 const int FanPower2 = 16;
 
-int fanSpeed = 0; 
-
-void fansetup(){
+void fansetup() {
     pinMode(FanPower1, OUTPUT);
     pinMode(FanPower2, OUTPUT);
 }
 
-void fanloop(){
-
-    float temperature = printerVariables.nozzletemp;
-
-    fanSpeed = 0;
-    for (size_t i = 1; i < printerConfig.fanGraph.size(); i++) {
-        if (temperature <= printerConfig.fanGraph[i].first) {
-        float t1 = printerConfig.fanGraph[i - 1].first;
-        float t2 = printerConfig.fanGraph[i].first;
-        int s1 = printerConfig.fanGraph[i - 1].second;
-        int s2 = printerConfig.fanGraph[i].second;
-        fanSpeed = s1 + (temperature - t1) * (s2 - s1) / (t2 - t1);
-        break;
-        }
+void fanloop() {
+    const float temperature = printerVariables.nozzletemp;
+    const int speed1 = printerConfig.staticFan
+        ? clampFanSpeed(printerConfig.staticFanSpeed)
+        : calculateFanSpeed(printerConfig.fanGraph, temperature);
+    int speed2 = speed1;
+    if (!printerConfig.fansSynchronized) {
+        speed2 = printerConfig.staticFan2
+            ? clampFanSpeed(printerConfig.staticFanSpeed2)
+            : calculateFanSpeed(printerConfig.fanGraph2, temperature);
     }
-    if (temperature >= printerConfig.fanGraph.back().first) {
-        fanSpeed = printerConfig.fanGraph.back().second;
-    }
-    
-    if (printerConfig.staticFan){
-        fanSpeed = printerConfig.staticFanSpeed;
-    }
-
-    int rpm = map(fanSpeed, 0, 100, 0, 255);
-
-    globalVariables.fanSpeed = fanSpeed;
-    
-    analogWrite(FanPower1,rpm);
-    analogWrite(FanPower2,rpm);
-};
+    globalVariables.fanSpeed = speed1;
+    globalVariables.fanSpeed2 = speed2;
+    analogWrite(FanPower1, map(speed1, 0, 100, 0, 255));
+    analogWrite(FanPower2, map(speed2, 0, 100, 0, 255));
+}
 
 #endif

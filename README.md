@@ -6,8 +6,29 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 
 - Connects to Bambulab H2D,X1,X1C,P1P Or P1S
 - Controls Fans based on printer temperature
+- Drives two fans together or independently, with separate curves and static-speed overrides
 
 ### Changelog
+
+#### 1.1.3 — 2026-10-23
+
+- Removed the separate Fan control heading and renamed the switch label to **Synchronize Fans**, using heading-size text beside the switch.
+
+#### 1.1.1 — 2026-10-23
+
+- Replaced the synchronization and curve selectors with graphical switches. Fan labels consistently use **Fan 1** and **Fan 2**, with white speed percentages for both indicators.
+- Clicking a curve point now selects its fan and opens the point editor. Overlapping points prefer the currently selected fan.
+- Replaced the save dialog with a notification that disappears after four seconds. Failed saves continue to show an error.
+- Changed the displayed name on the web pages to **BL Smart Flow+**.
+- Adopted major.feature.build versioning, with an automatic build-number increment and build date for each firmware build.
+
+#### 1.1.0 — 2026-10-23
+
+- Added **Both fans synchronized**, defaulting to On for new and existing configurations.
+- Added independent fan curves and static-speed overrides. Turning synchronization On uses Fan 1's settings for both outputs while preserving Fan 2's settings for later use.
+- Added two labeled curves on one chart, a fan editing selector, separate feature sections with inline static-speed controls, and two independently animated fan indicators.
+- Persisted both fans' static settings and curves, validated curve updates, and applied web changes only after a successful flash write.
+- Added migration, GPIO output, save-failure, and UI regression tests. Invalid saved curves now fall back to defaults without deleting the configuration file.
 
 #### 1.0.3 — 2026-10-23
 
@@ -56,6 +77,36 @@ Once you have uploaded the firmware to your device, please visit the [dutchdevel
 
 
 ### Development Notes
+
+#### Firmware Versioning
+
+Versions use **major.feature.build**: the first number changes for a major overhaul, the middle number for feature additions, and the last number increments for every firmware build.
+
+`version_build.py` reserves the next build number in `platformio.ini` before compiling, including when Upload builds new firmware. A failed build still consumes its number. Cleaning, IDE metadata, filesystem-only operations, and uploading an existing binary with `nobuild` do not increment it. Commit the updated `custom_version` with the changes being built. When starting a new feature series or major version, update the corresponding number in `custom_version`; the next build increments its final number as usual.
+
+The compiler and `.firmware` output filenames use the same reserved version. The displayed date comes from the build machine's local date. Web pages load the version from the firmware instead of keeping a separate hardcoded copy.
+
+#### Independent Fan Control
+
+**Synchronize Fans: On** uses Fan 1's curve and static-speed override for both outputs. This is also the default after upgrading from 1.0.x. Fan 1 is GPIO 17; Fan 2 is GPIO 16. Both curves use the printer's nozzle temperature.
+
+Set synchronization to **Off** and save to configure the fans separately. Fan 2 initially copies Fan 1's current settings. The Fan Graph page shows both curves; the **Edit curve** switch selects **Fan 1** on the left and **Fan 2** on the right. Clicking a point also selects its fan and opens the editor; overlapping points prefer the currently selected fan. Valid point changes save automatically, with a confirmation that disappears after four seconds. Each fan's static-speed switch overrides its own curve with the entered percentage.
+
+Switching synchronization back On preserves Fan 2's curve and static settings, including across restarts. Switching Off again restores them. Configuration changes take effect after a successful Save; unsaved changes to the synchronization selector do not change the running fan mode.
+
+The existing HTTP endpoints remain available: `points` and `speed` still describe Fan 1. `/getFanConfig` adds `points2` and `fansSynchronized`; `/sensorData` adds `speed2`. To update a specific curve, POST `fan=1` or `fan=2` to `/updateFanConfig` alongside the existing `points` form field containing `{"points":[{"temp":0,"speed":0},...]}`. Omitting `fan` selects Fan 1.
+
+#### Tests
+
+After a PlatformIO build has installed dependencies, run:
+
+```sh
+node --test test/settings-page.test.js
+python3 test/version_build_test.py
+python3 test/run-host-tests.py
+```
+
+The native tests use the production firmware handlers and ArduinoJson with simulated flash, HTTP, and GPIO I/O, plus address and undefined-behavior sanitizers. Physical fan operation and a power-cycle check should also be verified on the device after an OTA update.
 
 #### Generating .h Files for Compressed HTML
 

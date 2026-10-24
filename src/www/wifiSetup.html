@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
     <head>
+        <meta charset="utf-8">
+        <title>BL Smart Flow+ — Wi-Fi Setup</title>
         <link rel="icon" href="/favicon.ico" type="image/x-icon">
         <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css' integrity='sha512-ixlOZJxl8aj1Cz0mKjyFTJQx/s+U6wo0o6P+CZPRJX+gze3Jh8Fro/mTyLr5r/Vx+uV7J8RvRfZp5+X9fivG7A==' crossorigin='anonymous' referrerpolicy='no-referrer' />
         <style>
@@ -90,13 +92,13 @@
     <div class="center-container">
         <div class='BLLEDlogo-container'>
             <img class='BLLEDlogo' src='https://raw.githubusercontent.com/DutchDevelop/BLLEDController/main/src/www/Icon-square.png' alt='Logo'>
-            <span class='BLLEDlogo-text'>BLLEDController</span>
+            <span class='BLLEDlogo-text'>BL Smart Flow+</span>
         </div>
-        <button id="connectButton"> Select BLLed Controller</button>
+        <button id="connectButton">Select BL Smart Flow+</button>
         <div id = "BLLEDForm" class='BLLEDform-container hidden'>
-            <h1>BLLEDController WIFI Setup Page</h1>
+            <h1>BL Smart Flow+ Wi-Fi Setup</h1>
             <p>
-                This page allows you to set up your BLLEDController's WIFI By entering your WIFI details.
+                This page allows you to set up your BL Smart Flow+ device by entering your Wi-Fi details.
             </p>   
             <label for="ssid">SSID:</label>
             <input type="text" id="ssid" placeholder="Enter SSID"><br>
@@ -156,8 +158,8 @@
                             if (accumulatedData.includes("IP_ADDRESS:")) {
                                 const startIndex = accumulatedData.indexOf("IP_ADDRESS:") + "IP_ADDRESS:".length;
                                 const ipAddress = accumulatedData.substring(startIndex).trim();
-                                document.getElementById("status").innerHTML = `Successfully connected to wifi. <span style="color:MediumSeaGreen;"><B>Head over to the <A HREF="http://${ipAddress}/">BLLED Conntroller Setup Page</A> to customise your settings</B></span><BR>`;
-                                document.getElementById("status").innerHTML += `BLLED Controller Setup page address: <A HREF="http://${ipAddress}/">http://${ipAddress}/</A>`;
+                                document.getElementById("status").innerHTML = `Successfully connected to wifi. <span style="color:MediumSeaGreen;"><B>Head over to the <A HREF="http://${ipAddress}/">BL Smart Flow+ Setup Page</A> to customise your settings</B></span><BR>`;
+                                document.getElementById("status").innerHTML += `BL Smart Flow+ Setup page address: <A HREF="http://${ipAddress}/">http://${ipAddress}/</A>`;
                                 accumulatedData = '';
                                 break;
                             }else{

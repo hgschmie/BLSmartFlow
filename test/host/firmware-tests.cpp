@@ -1,0 +1,204 @@
+#include <cassert>
+#include <iostream>
+#include <limits>
+#include "src/blflow/web-server.h"
+#include "src/blflow/fans.h"
+
+const char *legacyConfig = R"({"ssid":"test-network","appw":"test-password","printerIp":"192.0.2.83","accessCode":"TEST1234","serialNumber":"TESTSERIAL12345","bssi":"","debuging":true,"debugingchange":false,"mqttdebug":false,"fanPoints":[{"temp":0,"speed":0},{"temp":200,"speed":80},{"temp":400,"speed":100}]})";
+const char *newCurve = R"({"points":[{"temp":400,"speed":90},{"temp":0,"speed":10},{"temp":200,"speed":50}]})";
+const char *secondCurve = R"({"points":[{"temp":0,"speed":30},{"temp":400,"speed":70}]})";
+
+void reset() {
+    printerConfig = PrinterConfig{};
+    globalVariables = GlobalVariables{};
+    printerVariables = PrinterVariables{};
+    LittleFS.files.clear();
+    failOpen = failRename = shortRead = false;
+    writeBudget = SIZE_MAX;
+    webServer.params.clear();
+    webServer.responses.clear();
+    pwmValues.clear();
+}
+void putConfig(const std::string &json) {
+    LittleFS.files[configPath] = std::make_shared<std::string>(json);
+}
+std::string savedConfig() { return *LittleFS.files.at(configPath); }
+void reboot() {
+    printerConfig = PrinterConfig{};
+    globalVariables = GlobalVariables{};
+    loadFileSystem();
+}
+int options(std::map<std::string,String> params) {
+    webServer.params = std::move(params);
+    webServer.responses.clear();
+    submitOptions();
+    assert(webServer.responses.size() == 1);
+    return webServer.responses[0];
+}
+int curve(const char *json, const char *fan = nullptr) {
+    webServer.params = {{"points", json}};
+    if (fan) webServer.params["fan"] = fan;
+    webServer.responses.clear();
+    handleUpdateFanConfig();
+    assert(webServer.responses.size() == 1);
+    return webServer.responses[0];
+}
+JsonDocument response() {
+    JsonDocument json;
+    assert(!deserializeJson(json, webServer.lastBody));
+    return json;
+}
+void assertCredentials() {
+    assert(std::string(printerConfig.printerIP) == "192.0.2.83");
+    assert(std::string(printerConfig.accessCode) == "TEST1234");
+    assert(std::string(printerConfig.serialNumber) == "TESTSERIAL12345");
+    assert(std::string(globalVariables.SSID) == "test-network");
+    assert(std::string(globalVariables.APPW) == "test-password");
+}
+void assertPWM(float temperature, int speed1, int speed2) {
+    printerVariables.nozzletemp = temperature;
+    fanloop();
+    assert(globalVariables.fanSpeed == speed1 && globalVariables.fanSpeed2 == speed2);
+    assert(pwmValues.at(17) == speed1 * 255 / 100);
+    assert(pwmValues.at(16) == speed2 * 255 / 100);
+}
+
+template<class T> void check(const char *name, T test) {
+    reset(); test(); std::cout << "PASS: " << name << '\n';
+}
+
+int main() {
+    check("legacy configuration retains credentials and curve, defaults to synchronized", [] {
+        putConfig(legacyConfig); reboot(); assertCredentials();
+        assert(printerConfig.fansSynchronized);
+        assert(!printerConfig.staticFan && printerConfig.staticFanSpeed == 0);
+        assert(printerConfig.fanGraph.size() == 3 && printerConfig.fanGraph2.empty());
+        assert(savedConfig() == legacyConfig);
+        assertPWM(100, 40, 40);
+        handleGetOptions(); auto json = response();
+        assert(json["fansSynchronized"] == true && json["fan2Configured"] == false);
+        assert(json["code"] == "*****234");
+        handleGetFanConfig(); json = response();
+        assert(json["points"][1]["speed"] == 80 && json["points2"][1]["speed"] == 80);
+        assert(printerConfig.fanGraph2.empty());
+    });
+    check("first independent save copies the current Fan 1 curve and static settings", [] {
+        putConfig(legacyConfig); reboot();
+        assert(curve(newCurve) == 200);
+        assert(options({{"fansSynchronized","on"},{"staticfan","on"},{"staticfanspeed","37"}}) == 200);
+        reboot(); assert(printerConfig.fanGraph2.empty());
+        assert(options({{"fansSynchronized","off"},{"staticfan","on"},{"staticfanspeed","37"}}) == 200);
+        assert(printerConfig.fanGraph == printerConfig.fanGraph2);
+        assert(printerConfig.staticFan2 && printerConfig.staticFanSpeed2 == 37);
+        reboot(); assertCredentials();
+        assert(!printerConfig.fansSynchronized && printerConfig.staticFan2);
+        assertPWM(100, 37, 37);
+    });
+    check("separate curves, static overrides, and sensor output drive separate GPIOs", [] {
+        assert(options({{"fansSynchronized","off"}}) == 200);
+        assert(curve(newCurve, "1") == 200 && curve(secondCurve, "2") == 200);
+        assertPWM(100, 30, 40);
+        assertPWM(-20, 10, 30);
+        assertPWM(500, 90, 70);
+        assert(options({{"staticfan","on"},{"staticfanspeed","12"},{"staticfan2","off"}}) == 200);
+        assertPWM(100, 12, 40);
+        assert(options({{"staticfan","off"},{"staticfan2","on"},{"staticfanspeed2","83"}}) == 200);
+        assertPWM(100, 30, 83);
+        handleSensorData(); auto json = response();
+        assert(json["speed"] == 30 && json["speed2"] == 83);
+        reboot(); assertPWM(100, 30, 83);
+    });
+    check("sync cycles and synchronized edits preserve dormant Fan 2 settings", [] {
+        putConfig(legacyConfig); reboot();
+        assert(options({{"fansSynchronized","off"},{"staticfan2","on"},{"staticfanspeed2","61"}}) == 200);
+        assert(curve(secondCurve,"2") == 200);
+        const auto savedSecond = printerConfig.fanGraph2;
+        assert(options({{"fansSynchronized","on"},{"staticfan","on"},{"staticfanspeed","42"},
+                        {"staticfan2","off"},{"staticfanspeed2","0"}}) == 200);
+        assert(curve(newCurve) == 200); reboot();
+        assertPWM(100, 42, 42);
+        assert(printerConfig.fanGraph2 == savedSecond && printerConfig.staticFanSpeed2 == 61);
+        assert(options({{"fansSynchronized","off"},{"staticfan","off"}}) == 200);
+        reboot(); assertCredentials(); assertPWM(100, 30, 61);
+    });
+    check("empty, duplicate, malformed, and out-of-range curves never replace valid curves", [] {
+        assert(curve(newCurve) == 200);
+        const auto previous = printerConfig.fanGraph;
+        const auto disk = savedConfig();
+        for (const char *bad : {"{", R"({"points":[]})", R"({"points":{}})",
+             R"({"points":[{"temp":20,"speed":10},{"temp":20,"speed":40}]})",
+             R"({"points":[{"temp":-1,"speed":10}]})", R"({"points":[{"temp":401,"speed":10}]})",
+             R"({"points":[{"temp":20,"speed":101}]})", R"({"points":[{"temp":20,"speed":-1}]})",
+             R"({"points":[{"temp":20,"speed":12.5}]})", R"({"points":[{"temp":"20","speed":10}]})",
+             R"({"points":[{"temp":20}]})", R"({"points":[null]})"}) {
+            assert(curve(bad,"1") == 400);
+            assert(curve(bad,"2") == 400);
+            assert(printerConfig.fanGraph == previous && printerConfig.fanGraph2.empty());
+            assert(savedConfig() == disk);
+        }
+        assert(curve(newCurve,"3") == 400);
+    });
+    check("single-point curves stay constant and malformed runtime input is safe", [] {
+        assert(curve(R"({"points":[{"temp":100,"speed":34}]})") == 200);
+        assertPWM(0,34,34); assertPWM(200,34,34);
+        assert(calculateFanSpeed({}, 50) == 0);
+        assert(calculateFanSpeed(defaultFanCurve(), std::numeric_limits<float>::quiet_NaN()) == 0);
+        assert(calculateFanSpeed({{0, 120}},100) == 100);
+    });
+    check("invalid static values and modes do not change config", [] {
+        putConfig(legacyConfig); reboot();
+        for (const char *value : {"", "-1", "101", "NaN", "20.5", "999999999999"}) {
+            assert(options({{"staticfanspeed",value}}) == 400);
+            assert(options({{"fansSynchronized","off"},{"staticfanspeed2",value}}) == 400);
+            assert(printerConfig.fansSynchronized && printerConfig.fanGraph2.empty());
+        }
+        assert(options({{"fansSynchronized","invalid"}}) == 400);
+        assert(options({{"staticfan","invalid"}}) == 400);
+        assert(options({{"code","TOO-LONG-CODE"}}) == 400);
+        assertCredentials(); assert(savedConfig() == legacyConfig);
+    });
+    for (int failure = 0; failure < 3; ++failure) {
+        check("failed settings and curve writes retain active and saved config", [failure] {
+            putConfig(legacyConfig); reboot();
+            const auto before = printerConfig.fanGraph;
+            if (failure == 0) failOpen = true;
+            if (failure == 1) writeBudget = 10;
+            if (failure == 2) failRename = true;
+            assert(options({{"fansSynchronized","off"},{"code","NEW12345"}}) == 500);
+            assert(curve(secondCurve,"2") == 500);
+            assert(printerConfig.fansSynchronized && printerConfig.fanGraph2.empty());
+            assert(printerConfig.fanGraph == before);
+            assertCredentials(); assert(savedConfig() == legacyConfig);
+            assert(!LittleFS.exists("/blledconfig.json.tmp"));
+        });
+    }
+    check("invalid stored curves fall back without erasing config or credentials", [] {
+        JsonDocument json; deserializeJson(json,legacyConfig);
+        json["fanPoints"].to<JsonArray>();
+        json["fanPoints2"].to<JsonArray>();
+        json["fansSynchronized"] = false;
+        std::string invalid; serializeJson(json,invalid); putConfig(invalid); reboot();
+        assertCredentials(); assert(!printerConfig.fansSynchronized);
+        assert(printerConfig.fanGraph == defaultFanCurve() && printerConfig.fanGraph2 == defaultFanCurve());
+        assert(savedConfig() == invalid);
+    });
+    check("missing or unreadable config is not overwritten", [] {
+        loadFileSystem(); assert(!LittleFS.exists(configPath));
+        putConfig("{"); reboot(); assert(savedConfig() == "{");
+        putConfig(legacyConfig); shortRead=true; reboot();
+        assert(savedConfig() == legacyConfig && printerConfig.fansSynchronized);
+    });
+    check("independent config missing Fan 2 data falls back to Fan 1", [] {
+        JsonDocument json; deserializeJson(json,legacyConfig); json["fansSynchronized"]=false;
+        json["staticFan"]=true; json["staticFanSpeed"]=19;
+        std::string incomplete; serializeJson(json,incomplete); putConfig(incomplete); reboot();
+        assert(printerConfig.fanGraph == printerConfig.fanGraph2);
+        assertPWM(100,19,19);
+    });
+    check("legacy forms retain sync mode and masked credentials", [] {
+        putConfig(legacyConfig); reboot();
+        assert(options({{"code","*****234"},{"serial","***********345"},{"staticfan","on"},{"staticfanspeed","25"}}) == 200);
+        assertCredentials(); reboot(); assertCredentials(); assertPWM(100,25,25);
+        assert(options({}) == 204);
+    });
+}
