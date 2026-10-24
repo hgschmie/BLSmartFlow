@@ -363,8 +363,9 @@
 
     <div id="toggleTab" class="tab-content active">
       <div class="toggles-container">
-        <form method='POST' onsubmit='return submitOptions();'>
+        <form method='POST' onsubmit='return submitOptions(event);'>
           <h1>Settings</h1>
+          <p id="settings-status" role="status">Loading settings...</p>
           <h2>Printer Information</h2>
 
           <label>Printer IP:</label>
@@ -407,19 +408,23 @@
             </label>
             <span class="toggle-label">MQTT Logging</span>
           </div>
-          <input type='submit' value='Save'>
+          <input type='submit' id='saveOptions' value='Save' disabled>
         </form>
       </div>
     </div>
-    <h2 id="firmwareversion">Firmware Version: Stable 1.0.1 (2026.10.23)</h2>
+    <h2 id="firmwareversion">Firmware Version: Stable 1.0.2 (2026.10.23)</h2>
   </div> <!-- .container -->
 
   <script>
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
+    let optionsLoaded = false;
 
-    function submitOptions(){
+    function submitOptions(event){
       event.preventDefault();
+      if (!optionsLoaded) {
+        return false;
+      }
 
       var xhr = new XMLHttpRequest();
       xhr.open('POST', '/submitOptions', true);
@@ -437,7 +442,6 @@
           parameters.push(encodeURIComponent(key) + '=' + encodeURIComponent(value));
       });
       var body = parameters.join('&');
-      console.log(body);
       xhr.send(body);
 
       return false;
@@ -445,9 +449,36 @@
 
     function updateOptions(){
       var xhr = new XMLHttpRequest();
+      var status = document.getElementById('settings-status');
+      var saveButton = document.getElementById('saveOptions');
+      optionsLoaded = false;
+      saveButton.disabled = true;
+      status.textContent = 'Loading settings...';
+
+      function loadFailed() {
+          status.textContent = 'Unable to load settings. Reload this page to retry.';
+      }
+
       xhr.onreadystatechange = function() {
-          if (xhr.readyState === 4 && xhr.status === 200) {
-              var configData = JSON.parse(xhr.responseText);
+          if (xhr.readyState === 4) {
+              if (xhr.status !== 200) {
+                  loadFailed();
+                  return;
+              }
+              var configData;
+              try {
+                  configData = JSON.parse(xhr.responseText);
+                  if (!configData || typeof configData !== 'object' ||
+                      typeof configData.ip !== 'string' ||
+                      typeof configData.code !== 'string' ||
+                      typeof configData.id !== 'string') {
+                      loadFailed();
+                      return;
+                  }
+              } catch (error) {
+                  loadFailed();
+                  return;
+              }
               document.getElementById("firmwareversion").textContent = "Firmware Version: "+(configData.firmwareversion || "Unknown version");
 
               document.getElementById('printerip').value = configData.ip || '';
@@ -460,9 +491,15 @@
               document.getElementById('debuging').checked = configData.debuging || false;
               document.getElementById('debugingchange').checked = configData.debugingchange || false;
               document.getElementById('mqttdebug').checked = configData.mqttdebug || false;
+              optionsLoaded = true;
+              saveButton.disabled = false;
+              status.textContent = '';
           };
       };
       xhr.open('GET', '/getOptions', true);
+      xhr.timeout = 30000;
+      xhr.onerror = loadFailed;
+      xhr.ontimeout = loadFailed;
       xhr.send();
     };
 
@@ -478,9 +515,8 @@
       });
     });
 
-    window.onload = function() {
-      updateOptions();
-    };
+    // This script follows the settings form; external images can still be loading.
+    updateOptions();
   </script>
 
   <script>
