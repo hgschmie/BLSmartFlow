@@ -7,8 +7,22 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 - Connects to Bambulab H2D,X1,X1C,P1P Or P1S
 - Controls Fans based on printer temperature
 - Drives two fans together or independently, with separate curves and static-speed overrides
+- Each output can follow the reported speed of a selected printer fan
 
 ### Changelog
+
+#### 1.2.5 — 2026-10-23
+
+- Reserved an empty source-label line beneath fans that are not following, keeping the two fan images aligned.
+- Matched Bambu Studio's 10% speed steps for part, auxiliary, and chamber fan reports, fixing cases where a printer setting of 70% appeared as 71%. Static speeds and temperature curves retain their existing precision.
+
+#### 1.2.4 — 2026-10-23
+
+- Added **Follow Printer Fan** for each output, with Part Cooling, Auxiliary Cooling, Chamber/Exhaust, and Hotend/Heatbreak sources. Enabling it turns off Static Fan Speed, and enabling Static Fan Speed turns following off. Both can be off to use the temperature curve.
+- Added a white source label below each following fan's speed indicator, and enlarged both override labels.
+- Decode packed and separate MQTT fan-speed fields, retain speeds across partial updates and disconnects, and use 0% until the first valid report after boot.
+- Persist follow settings independently for both outputs, preserve dormant Fan 2 settings during synchronization, and default following to Off for existing configurations.
+- Added MQTT parsing, output control, persistence, invalid-input, and UI regression tests.
 
 #### 1.1.3 — 2026-10-23
 
@@ -95,6 +109,23 @@ Set synchronization to **Off** and save to configure the fans separately. Fan 2 
 Switching synchronization back On preserves Fan 2's curve and static settings, including across restarts. Switching Off again restores them. Configuration changes take effect after a successful Save; unsaved changes to the synchronization selector do not change the running fan mode.
 
 The existing HTTP endpoints remain available: `points` and `speed` still describe Fan 1. `/getFanConfig` adds `points2` and `fansSynchronized`; `/sensorData` adds `speed2`. To update a specific curve, POST `fan=1` or `fan=2` to `/updateFanConfig` alongside the existing `points` form field containing `{"points":[{"temp":0,"speed":0},...]}`. Omitting `fan` selects Fan 1.
+
+#### Follow Printer Fan
+
+Below each **Static Fan Speed** row, enable **Follow Printer Fan**, choose a source, and save. The output mirrors that printer fan's reported percentage. The two switches are mutually exclusive, and either can always be switched off. When both are off, the output uses its temperature curve. **Synchronize Fans: On** applies Fan 1's settings to both outputs; switching it Off restores Fan 2's saved settings. The selected source appears in white below the speed indicator after a successful save.
+
+| Source | MQTT field | Indicator label |
+| --- | --- | --- |
+| Part Cooling Fan | `print.cooling_fan_speed` | Part Cooling Fan |
+| Auxiliary Cooling Fan | `print.big_fan1_speed` | Auxiliary Fan |
+| Chamber/Exhaust Fan | `print.big_fan2_speed` | Chamber Fan |
+| Hotend/Heatbreak Fan | `print.heatbreak_fan_speed` | Hotend Fan |
+
+The packed `print.fan_gear` field contains three 0–255 values (part, auxiliary, chamber) and takes precedence when present. Those values are rounded to the nearest 10% step to match [Bambu Studio's fan display](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/Widgets/FanControl.cpp). For example, PWM 180 becomes 70%, not 71%. Separate 0–15 fields for these three fans use `floor(raw / 1.5) * 10`, matching [Bambu Studio's decoder](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceCore/DevFan.cpp). Hotend/heatbreak readings use a separate 0–15 scale and are converted to the nearest whole percentage. These are reported speed levels, not RPM measurements; a source is usable only if the printer reports it. Static speeds and curve speeds are not rounded to 10% steps.
+
+Each source starts at **0% after boot** and keeps its last valid speed when MQTT disconnects, a field is omitted, or a value is malformed. An explicitly reported zero stops the following output. Speeds are kept in RAM; only the follow settings are saved to flash. Existing configurations load with following Off.
+
+`/getOptions` and `/submitOptions` add `followPrinterFan` and `printerFanSource` (and `followPrinterFan2` / `printerFanSource2`). Sources are `part`, `auxiliary`, `chamber`, or `heatbreak`. The form posts explicit `on`/`off` values; requests enabling both overrides are rejected. `/sensorData` adds `printerFans`, containing each source's last percentage or `null` before its first report.
 
 #### Tests
 

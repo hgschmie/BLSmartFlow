@@ -30,11 +30,15 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig){
     json["fansSynchronized"] = config.fansSynchronized;
     json["staticFan"] = config.staticFan;
     json["staticFanSpeed"] = config.staticFanSpeed;
+    json["followPrinterFan"] = config.followPrinterFan;
+    json["printerFanSource"] = printerFanSourceName(config.printerFanSource);
     writeFanCurve(json["fanPoints"].to<JsonArray>(), config.fanGraph);
     if (!config.fanGraph2.empty()) {
         writeFanCurve(json["fanPoints2"].to<JsonArray>(), config.fanGraph2);
         json["staticFan2"] = config.staticFan2;
         json["staticFanSpeed2"] = config.staticFanSpeed2;
+        json["followPrinterFan2"] = config.followPrinterFan2;
+        json["printerFanSource2"] = printerFanSourceName(config.printerFanSource2);
     }
     if (json.overflowed()) {
         Serial.println(F("Not enough memory to save config"));
@@ -111,6 +115,10 @@ void loadFileSystem(){
         loaded.fansSynchronized = json["fansSynchronized"] | true;
         loaded.staticFan = json["staticFan"] | false;
         loaded.staticFanSpeed = clampFanSpeed(json["staticFanSpeed"] | 0);
+        loaded.followPrinterFan = (json["followPrinterFan"] | false) && !loaded.staticFan;
+        if (!readPrinterFanSource(json["printerFanSource"], loaded.printerFanSource)) {
+            loaded.followPrinterFan = false;
+        }
         if (!readFanCurve(json["fanPoints"], loaded.fanGraph)) {
             Serial.println(F("Missing or invalid Fan 1 curve; using default curve"));
         }
@@ -121,6 +129,10 @@ void loadFileSystem(){
             }
             loaded.staticFan2 = json["staticFan2"] | false;
             loaded.staticFanSpeed2 = clampFanSpeed(json["staticFanSpeed2"] | 0);
+            loaded.followPrinterFan2 = (json["followPrinterFan2"] | false) && !loaded.staticFan2;
+            if (!readPrinterFanSource(json["printerFanSource2"], loaded.printerFanSource2)) {
+                loaded.followPrinterFan2 = false;
+            }
         }
         if (!loaded.fansSynchronized) initializeSecondFan(loaded);
         printerConfig = std::move(loaded);

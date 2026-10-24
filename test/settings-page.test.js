@@ -128,6 +128,123 @@ test('legacy options default to one synchronized curve and feature section', asy
   assert.equal(page.get('fan2Indicator').hidden, true);
   assert.equal(page.charts[0].data.datasets.length, 1);
   assert.equal(page.charts[0].data.datasets[0].label, 'Both fans');
+  assert.equal(page.get('followPrinterFan').checked, false);
+  assert.equal(page.get('followPrinterFan2').checked, false);
+  assert.equal(page.get('printerFanSource').value, 'chamber');
+  assert.equal(page.get('fan1Source').hidden, false);
+  assert.equal(page.get('fan1Source').textContent, '');
+});
+
+for (const suffix of ['', '2']) {
+  test(`Fan ${suffix || '1'} static and follow switches exclude each other but can both be off`, async () => {
+    const page = await readyPage(separateConfig);
+    page.get('staticfan' + suffix).checked = true;
+    page.trigger('staticfan' + suffix, 'change');
+    assert.equal(page.get('followPrinterFan' + suffix).checked, false);
+    page.get('followPrinterFan' + suffix).checked = true;
+    page.trigger('followPrinterFan' + suffix, 'change');
+    assert.equal(page.get('staticfan' + suffix).checked, false);
+    assert.equal(page.get('staticfan' + suffix).disabled, false);
+    assert.equal(page.get('followPrinterFan' + suffix).disabled, false);
+    page.get('followPrinterFan' + suffix).checked = false;
+    page.trigger('followPrinterFan' + suffix, 'change');
+    assert.equal(page.get('staticfan' + suffix).checked, false);
+    page.get('followPrinterFan' + suffix).checked = true;
+    page.trigger('followPrinterFan' + suffix, 'change');
+    page.get('staticfan' + suffix).checked = true;
+    page.trigger('staticfan' + suffix, 'change');
+    assert.equal(page.get('followPrinterFan' + suffix).checked, false);
+    page.get('staticfan' + suffix).checked = false;
+    page.trigger('staticfan' + suffix, 'change');
+    assert.equal(page.get('followPrinterFan' + suffix).checked, false);
+  });
+}
+
+test('following is saved separately for each Fan and labels change only after successful reload', async () => {
+  const page = await readyPage(separateConfig);
+  for (const [suffix, source] of [['', 'chamber'], ['2', 'heatbreak']]) {
+    page.get('followPrinterFan' + suffix).checked = true;
+    page.trigger('followPrinterFan' + suffix, 'change');
+    page.get('printerFanSource' + suffix).value = source;
+  }
+  assert.equal(page.get('fan1Source').hidden, false);
+  assert.equal(page.get('fan1Source').textContent, '');
+  assert.equal(page.get('fan2Source').hidden, false);
+  assert.equal(page.get('fan2Source').textContent, '');
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.get('followPrinterFan'), 'on');
+  assert.equal(body.get('printerFanSource'), 'chamber');
+  assert.equal(body.get('followPrinterFan2'), 'on');
+  assert.equal(body.get('printerFanSource2'), 'heatbreak');
+  assert.equal(body.get('staticfan'), 'off');
+  assert.equal(body.get('staticfan2'), 'off');
+  page.requests[1].respond(200, 'Saved');
+  page.requests[2].respond(200, JSON.stringify({ ...separateConfig, staticfans2: false,
+    followPrinterFan: true, printerFanSource: 'chamber', followPrinterFan2: true, printerFanSource2: 'heatbreak' }));
+  assert.equal(page.get('fan1Source').textContent, 'Chamber Fan');
+  assert.equal(page.get('fan2Source').textContent, 'Hotend Fan');
+  assert.equal(page.get('fan1Source').hidden, false);
+  assert.equal(page.get('fan2Source').hidden, false);
+});
+
+test('following can be turned off explicitly and a failed save retains the active label', async () => {
+  const page = await readyPage({ ...baseConfig, followPrinterFan: true, printerFanSource: 'auxiliary' });
+  assert.equal(page.get('fan1Source').textContent, 'Auxiliary Fan');
+  page.get('followPrinterFan').checked = false;
+  page.trigger('followPrinterFan', 'change');
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.get('followPrinterFan'), 'off');
+  assert.equal(body.get('staticfan'), 'off');
+  page.requests[1].respond(500, 'Flash write failed');
+  assert.equal(page.get('fan1Source').textContent, 'Auxiliary Fan');
+  assert.equal(page.get('fan1Source').hidden, false);
+  page.context.submitOptions({ preventDefault() {} });
+  page.requests[2].respond(200, 'Saved');
+  page.requests[3].respond(200, JSON.stringify(baseConfig));
+  assert.equal(page.get('fan1Source').hidden, false);
+  assert.equal(page.get('fan1Source').textContent, '');
+});
+
+test('first independent draft copies follow settings and sync saves preserve dormant Fan 2', async () => {
+  const page = await readyPage({ ...baseConfig, followPrinterFan: true, printerFanSource: 'part' });
+  page.get('fansSynchronized').checked = false;
+  page.trigger('fansSynchronized', 'change');
+  assert.equal(page.get('followPrinterFan2').checked, true);
+  assert.equal(page.get('printerFanSource2').value, 'part');
+  assert.equal(page.get('followPrinterFan2').disabled, false);
+  page.get('printerFanSource2').value = 'heatbreak';
+  page.get('fansSynchronized').checked = true;
+  page.trigger('fansSynchronized', 'change');
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.has('followPrinterFan2'), false);
+  assert.equal(body.has('printerFanSource2'), false);
+  assert.equal(page.get('printerFanSource2').value, 'heatbreak');
+});
+
+test('synchronized indicators use Fan 1 and retain saved Fan 2 follow settings', async () => {
+  const page = await readyPage({ ...baseConfig, fansSynchronized: true, fan2Configured: true,
+    followPrinterFan: true, printerFanSource: 'chamber', followPrinterFan2: true, printerFanSource2: 'part' });
+  assert.equal(page.get('fan1Source').textContent, 'Chamber Fan');
+  assert.equal(page.get('fan2Indicator').hidden, true);
+  page.get('fansSynchronized').checked = false;
+  page.trigger('fansSynchronized', 'change');
+  assert.equal(page.get('followPrinterFan2').checked, true);
+  assert.equal(page.get('printerFanSource2').value, 'part');
+});
+
+test('mixed follow modes retain an empty source row for the other Fan', async () => {
+  for (const followsFirst of [false, true]) {
+    const page = await readyPage({ ...separateConfig, staticfans2: false,
+      followPrinterFan: followsFirst, printerFanSource: 'chamber',
+      followPrinterFan2: !followsFirst, printerFanSource2: 'part' });
+    assert.equal(page.get('fan1Source').hidden, false);
+    assert.equal(page.get('fan2Source').hidden, false);
+    assert.equal(page.get('fan1Source').textContent, followsFirst ? 'Chamber Fan' : '');
+    assert.equal(page.get('fan2Source').textContent, followsFirst ? '' : 'Part Cooling Fan');
+  }
 });
 
 test('submitting before settings arrive cannot overwrite saved credentials', () => {

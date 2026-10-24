@@ -104,15 +104,22 @@
     .fan-indicator { text-align: center; }
     .fan-indicator .fan-stack { display: block; margin: 0 auto .35rem; }
     .fan-label { display: block; font-size: .85rem; }
+    .fan-source { color: var(--color-white); margin-top: .2rem; min-height: 1.2em; line-height: 1.2; white-space: nowrap; }
     .fan-one { color: #73b9ff; }
     .fan-two { color: #ffbe70; }
     #settings-fields { border: 0; padding: 0; min-width: 0; width: 100%; }
     #settings-form { width: 100%; }
     .fan-features { margin: 1rem 0; }
-    .static-speed-row { display: flex; align-items: center; gap: .45rem; margin: .5rem 0; }
-    .static-speed-row > label:first-child { width: auto; flex: 1; font-size: .9rem; }
-    .static-speed-row .switch { width: 60px; flex: 0 0 60px; }
+    .static-speed-row, .follow-fan-row { display: flex; align-items: center; gap: .45rem; margin: .5rem 0; }
+    .static-speed-row > label:first-child, .follow-fan-row > label:first-child { width: auto; flex: 1; min-width: 0; font-size: 1.1475rem; }
+    .static-speed-row .switch, .follow-fan-row .switch { width: 60px; flex: 0 0 60px; }
     .static-speed-row input[type=number] { width: 4.3rem; padding: .4rem; min-width: 0; }
+    .follow-fan-row select { width: 11rem; max-width: 100%; min-width: 0; padding: .4rem; font-size: .9rem; }
+    @media (max-width: 480px) {
+      .follow-fan-row { flex-wrap: wrap; }
+      .follow-fan-row > label:first-child { flex-basis: calc(100% - 80px); }
+      .follow-fan-row select { width: 100%; }
+    }
     #settings-status, #curve-status, #mode-status { margin: .6rem 0; font-size: .9rem; }
     #save-notice {
       position: fixed;
@@ -361,6 +368,7 @@
           <img id="blades1" class="fanblades" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_blades.png" alt="">
         </div>
         <span class="fan-label"><span id="fan1Label">Both fans</span>: <span id="fan1Percent">-</span>%</span>
+        <span id="fan1Source" class="fan-label fan-source"></span>
       </div>
       <div id="fan2Indicator" class="fan-indicator" hidden>
         <div class="fan-stack">
@@ -368,6 +376,7 @@
           <img id="blades2" class="fanblades" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_blades.png" alt="">
         </div>
         <span class="fan-label"><span class="fan-two">Fan 2</span>: <span id="fan2Percent">-</span>%</span>
+        <span id="fan2Source" class="fan-label fan-source"></span>
       </div>
       <span class='logo-text'>BL Smart Flow+</span>
     </div>
@@ -474,6 +483,19 @@
               <input type="number" id="staticfanspeed" name="staticfanspeed" min="0" max="100" step="1" value="0" required aria-label="Fan 1 static speed percent">
               <span>%</span>
             </div>
+            <div class="follow-fan-row">
+              <label for="followPrinterFan">Follow Printer Fan</label>
+              <label class="switch">
+                <input type="checkbox" id="followPrinterFan" name="followPrinterFan" role="switch" aria-label="Fan 1 follow printer fan On/Off">
+                <span class="slider round"></span>
+              </label>
+              <select id="printerFanSource" name="printerFanSource" aria-label="Fan 1 printer fan source">
+                <option value="part">Part Cooling Fan</option>
+                <option value="auxiliary">Auxiliary Cooling Fan</option>
+                <option value="chamber" selected>Chamber/Exhaust Fan</option>
+                <option value="heatbreak">Hotend/Heatbreak Fan</option>
+              </select>
+            </div>
           </section>
           <section id="fan2Features" class="fan-features" hidden>
             <h2>Fan 2 features</h2>
@@ -485,6 +507,19 @@
               </label>
               <input type="number" id="staticfanspeed2" name="staticfanspeed2" min="0" max="100" step="1" value="0" required aria-label="Fan 2 static speed percent" disabled>
               <span>%</span>
+            </div>
+            <div class="follow-fan-row">
+              <label for="followPrinterFan2">Follow Printer Fan</label>
+              <label class="switch">
+                <input type="checkbox" id="followPrinterFan2" name="followPrinterFan2" role="switch" aria-label="Fan 2 follow printer fan On/Off" disabled>
+                <span class="slider round"></span>
+              </label>
+              <select id="printerFanSource2" name="printerFanSource2" aria-label="Fan 2 printer fan source" disabled>
+                <option value="part">Part Cooling Fan</option>
+                <option value="auxiliary">Auxiliary Cooling Fan</option>
+                <option value="chamber" selected>Chamber/Exhaust Fan</option>
+                <option value="heatbreak">Hotend/Heatbreak Fan</option>
+              </select>
             </div>
           </section>
 
@@ -528,6 +563,8 @@
     let fansSynchronized = true;
     let fan2Configured = false;
     let fan2DraftInitialized = false;
+    const printerFanLabels = { part: 'Part Cooling Fan', auxiliary: 'Auxiliary Fan', chamber: 'Chamber Fan', heatbreak: 'Hotend Fan' };
+    let activeFollowSources = [null, null];
     let curves = [[], []];
     let curvesLoaded = false;
     let curveSaving = false;
@@ -565,6 +602,8 @@
       $('fan2Features').hidden = synchronized;
       $('staticfan2').disabled = synchronized || !optionsLoaded || optionsSaving;
       $('staticfanspeed2').disabled = synchronized || !optionsLoaded || optionsSaving;
+      $('followPrinterFan2').disabled = synchronized || !optionsLoaded || optionsSaving;
+      $('printerFanSource2').disabled = synchronized || !optionsLoaded || optionsSaving;
     }
 
     function updateControls() {
@@ -596,6 +635,10 @@
       $('speedLabel').textContent = fansSynchronized ? 'Both fans' : 'Fan 1';
       $('speed2Row').hidden = fansSynchronized;
       $('fanSelectorRow').hidden = fansSynchronized;
+      for (let fan = 0; fan < 2; ++fan) {
+        const source = activeFollowSources[fansSynchronized ? 0 : fan];
+        $('fan' + (fan + 1) + 'Source').textContent = printerFanLabels[source] || '';
+      }
       if (fansSynchronized) {
         selectedFan = 0;
       }
@@ -642,6 +685,16 @@
         $('staticfanspeed').value = config.staticfanspeed || 0;
         $('staticfan2').checked = fan2Configured ? config.staticfans2 === true : config.staticfans === true;
         $('staticfanspeed2').value = fan2Configured ? (config.staticfanspeed2 || 0) : (config.staticfanspeed || 0);
+        $('followPrinterFan').checked = config.followPrinterFan === true && !$('staticfan').checked;
+        $('printerFanSource').value = printerFanLabels[config.printerFanSource] ? config.printerFanSource : 'chamber';
+        $('followPrinterFan2').checked = fan2Configured
+          ? config.followPrinterFan2 === true && !$('staticfan2').checked : $('followPrinterFan').checked;
+        $('printerFanSource2').value = fan2Configured
+          ? (printerFanLabels[config.printerFanSource2] ? config.printerFanSource2 : 'chamber') : $('printerFanSource').value;
+        activeFollowSources = [
+          $('followPrinterFan').checked ? $('printerFanSource').value : null,
+          $('followPrinterFan2').checked ? $('printerFanSource2').value : null
+        ];
         for (const name of ['debuging', 'debugingchange', 'mqttdebug']) $(name).checked = config[name] === true;
         optionsLoaded = true;
         $('settings-status').textContent = '';
@@ -661,11 +714,15 @@
       const parameters = new URLSearchParams(new FormData($('settings-form')));
       parameters.set('fansSynchronized', $('fansSynchronized').checked ? 'on' : 'off');
       parameters.set('staticfan', $('staticfan').checked ? 'on' : 'off');
+      parameters.set('followPrinterFan', $('followPrinterFan').checked ? 'on' : 'off');
       if (!$('fansSynchronized').checked) {
         parameters.set('staticfan2', $('staticfan2').checked ? 'on' : 'off');
+        parameters.set('followPrinterFan2', $('followPrinterFan2').checked ? 'on' : 'off');
       } else {
         parameters.delete('staticfan2');
         parameters.delete('staticfanspeed2');
+        parameters.delete('followPrinterFan2');
+        parameters.delete('printerFanSource2');
       }
       optionsSaving = true;
       hideSaveNotice();
@@ -840,11 +897,21 @@
       if (!$('fansSynchronized').checked && !fan2Configured && !fan2DraftInitialized) {
         $('staticfan2').checked = $('staticfan').checked;
         $('staticfanspeed2').value = $('staticfanspeed').value;
+        $('followPrinterFan2').checked = $('followPrinterFan').checked;
+        $('printerFanSource2').value = $('printerFanSource').value;
         fan2DraftInitialized = true;
       }
       markSettingsChanged();
     });
     $('settings-form').addEventListener('input', markSettingsChanged);
+    for (const suffix of ['', '2']) {
+      for (const [name, other] of [['staticfan', 'followPrinterFan'], ['followPrinterFan', 'staticfan']]) {
+        $(name + suffix).addEventListener('change', () => {
+          if ($(name + suffix).checked) $(other + suffix).checked = false;
+          markSettingsChanged();
+        });
+      }
+    }
     $('selectedFan').addEventListener('change', () => {
       selectedFan = fansSynchronized ? 0 : Number($('selectedFan').checked);
       clearPointSelection();

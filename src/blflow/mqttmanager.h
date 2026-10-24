@@ -9,6 +9,7 @@
 
 #include "AutoGrowBufferStream.h"
 #include "types.h"
+#include "mqtt-report.h"
 
 WiFiClientSecure wifiSecureClient;
 PubSubClient mqttClient(wifiSecureClient);
@@ -104,75 +105,8 @@ void connectMqtt(){
 }
 
 void ParseCallback(char *topic, byte *payload, unsigned int length){
-    JsonDocument messageobject;
-    JsonDocument filter;
-    //Rather than showing the entire message to Serial - grabbing only the pertinent bits for BLLED.
-    //Device Status
-    // filter["print"]["command"] =  true;
-    // filter["print"]["fail_reason"] =  true;
-    // filter["print"]["gcode_state"] =  true;
-    // filter["print"]["print_gcode_action"] =  true;
-    // filter["print"]["print_real_action"] =  true;
-    // filter["print"]["hms"] =  true;
-    // filter["print"]["home_flag"] =  true;
-    // filter["print"]["lights_report"] =  true;
-    // filter["print"]["stg_cur"] =  true;
-    // filter["print"]["print_error"] =  true;
-    // filter["print"]["wifi_signal"] =  true;
-    // filter["system"]["command"] =  true;
-    // filter["system"]["led_mode"] =  true;
-    filter["print"]["fan_gear"] = true;
-    filter["print"]["nozzle_temper"] = true;
-
-    auto deserializeError = deserializeJson(messageobject, payload, length, DeserializationOption::Filter(filter));
-    if (!deserializeError){
-        if (printerConfig.debuging){
-            Serial.println(F("Mqtt message received."));
-            Serial.print(F("FreeHeap: "));
-            Serial.println(ESP.getFreeHeap());
-        }
-
-        bool Changed = false;
-
-        if(messageobject.size() == 0)
-        {
-            //Null or Filtered message that are not 'Print' or 'System' payload - Ignore these
-            return;
-        }
-
-        //Output Filtered MQTT message
-        if (printerConfig.mqttdebug){
-            Serial.print(F("(Filtered) MQTT payload, ["));
-            Serial.print(millis());
-            Serial.print(F("], "));
-            serializeJson(messageobject, Serial);
-            Serial.println();
-        }
-
-        if (messageobject["print"].containsKey("fan_gear")){
-            uint32_t fan_gear = messageobject["print"]["fan_gear"].as<uint32_t>();
-            // Serial.println((int)((fan_gear & 0x000000FF) >> 0)); --Part cooling fan
-            // Serial.println((int)((fan_gear & 0x0000FF00) >> 8)); --Aux Cooling fan
-            //Serial.println((int)((fan_gear & 0x00FF0000) >> 16)); --Chamber fan
-
-            printerVariables.chamberfan = (int)((fan_gear & 0x00FF0000) >> 16);
-            Changed = true;
-        }
-
-        if (messageobject["print"].containsKey("nozzle_temper"))
-        {
-            printerVariables.nozzletemp = messageobject["print"]["nozzle_temper"].as<double>();
-            Changed = true;
-        }
-
-        if (Changed == true){
-            if (printerConfig.debuging){
-                Serial.println(F("Change from mqtt"));
-            }
-        }
-    }else{
-        Serial.println(F("Deserialize error while parsing mqtt"));
-        return;
+    if (parsePrinterReport(payload, length) && printerConfig.debuging) {
+        Serial.println(F("Change from MQTT"));
     }
 }
 

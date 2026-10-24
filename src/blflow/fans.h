@@ -11,16 +11,21 @@ void fansetup() {
     pinMode(FanPower2, OUTPUT);
 }
 
+int outputFanSpeed(bool staticEnabled, int staticSpeed, bool followEnabled,
+                   PrinterFanSource source, const FanCurve &curve, float temperature) {
+    if (staticEnabled) return clampFanSpeed(staticSpeed);
+    if (followEnabled) return clampFanSpeed(printerVariables.fans[static_cast<int>(source)].percent);
+    return calculateFanSpeed(curve, temperature);
+}
+
 void fanloop() {
     const float temperature = printerVariables.nozzletemp;
-    const int speed1 = printerConfig.staticFan
-        ? clampFanSpeed(printerConfig.staticFanSpeed)
-        : calculateFanSpeed(printerConfig.fanGraph, temperature);
+    const int speed1 = outputFanSpeed(printerConfig.staticFan, printerConfig.staticFanSpeed,
+        printerConfig.followPrinterFan, printerConfig.printerFanSource, printerConfig.fanGraph, temperature);
     int speed2 = speed1;
     if (!printerConfig.fansSynchronized) {
-        speed2 = printerConfig.staticFan2
-            ? clampFanSpeed(printerConfig.staticFanSpeed2)
-            : calculateFanSpeed(printerConfig.fanGraph2, temperature);
+        speed2 = outputFanSpeed(printerConfig.staticFan2, printerConfig.staticFanSpeed2,
+            printerConfig.followPrinterFan2, printerConfig.printerFanSource2, printerConfig.fanGraph2, temperature);
     }
     globalVariables.fanSpeed = speed1;
     globalVariables.fanSpeed2 = speed2;

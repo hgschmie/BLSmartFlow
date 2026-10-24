@@ -62,11 +62,15 @@ void handleGetOptions(){
 
     doc["staticfans"] = printerConfig.staticFan;
     doc["staticfanspeed"] = printerConfig.staticFanSpeed;
+    doc["followPrinterFan"] = printerConfig.followPrinterFan;
+    doc["printerFanSource"] = printerFanSourceName(printerConfig.printerFanSource);
     doc["fansSynchronized"] = printerConfig.fansSynchronized;
     const bool fan2Configured = !printerConfig.fanGraph2.empty();
     doc["fan2Configured"] = fan2Configured;
     doc["staticfans2"] = fan2Configured ? printerConfig.staticFan2 : printerConfig.staticFan;
     doc["staticfanspeed2"] = fan2Configured ? printerConfig.staticFanSpeed2 : printerConfig.staticFanSpeed;
+    doc["followPrinterFan2"] = fan2Configured ? printerConfig.followPrinterFan2 : printerConfig.followPrinterFan;
+    doc["printerFanSource2"] = printerFanSourceName(fan2Configured ? printerConfig.printerFanSource2 : printerConfig.printerFanSource);
 
     // Debugging
     doc["debuging"] = printerConfig.debuging;
@@ -104,6 +108,18 @@ bool readBoolArgument(const char *name, bool &value) {
     return true;
 }
 
+bool readFanModeArguments(const char *staticName, const char *followName, const char *sourceName,
+                          bool &staticEnabled, bool &followEnabled, PrinterFanSource &source) {
+    if (!readBoolArgument(staticName, staticEnabled) || !readBoolArgument(followName, followEnabled)) return false;
+    if (webServer.hasArg(sourceName) && !readPrinterFanSource(webServer.arg(sourceName).c_str(), source)) return false;
+    const bool enableStatic = webServer.hasArg(staticName) && staticEnabled;
+    const bool enableFollow = webServer.hasArg(followName) && followEnabled;
+    if (enableStatic && enableFollow) return false;
+    if (enableStatic) followEnabled = false;
+    if (enableFollow) staticEnabled = false;
+    return true;
+}
+
 template <size_t N>
 bool readStringArgument(const char *name, char (&value)[N]) {
     if (!webServer.hasArg(name)) return true;
@@ -132,16 +148,18 @@ void submitOptions() {
     // Legacy forms omit unchecked Fan 1 checkboxes.
     candidate.staticFan = false;
     if (!readBoolArgument("fansSynchronized", candidate.fansSynchronized) ||
-        !readBoolArgument("staticfan", candidate.staticFan) ||
+        !readFanModeArguments("staticfan", "followPrinterFan", "printerFanSource",
+            candidate.staticFan, candidate.followPrinterFan, candidate.printerFanSource) ||
         !readSpeedArgument("staticfanspeed", candidate.staticFanSpeed)) {
-        webServer.send(400, "text/plain", "Invalid fan settings; speeds must be integers from 0 to 100");
+        webServer.send(400, "text/plain", "Invalid Fan 1 settings; choose one override, a valid printer fan, and an integer speed from 0 to 100");
         return;
     }
     if (!candidate.fansSynchronized) {
         initializeSecondFan(candidate);
-        if (!readBoolArgument("staticfan2", candidate.staticFan2) ||
+        if (!readFanModeArguments("staticfan2", "followPrinterFan2", "printerFanSource2",
+                candidate.staticFan2, candidate.followPrinterFan2, candidate.printerFanSource2) ||
             !readSpeedArgument("staticfanspeed2", candidate.staticFanSpeed2)) {
-            webServer.send(400, "text/plain", "Invalid Fan 2 settings; speed must be an integer from 0 to 100");
+            webServer.send(400, "text/plain", "Invalid Fan 2 settings; choose one override, a valid printer fan, and an integer speed from 0 to 100");
             return;
         }
     }
@@ -199,6 +217,11 @@ void handleSensorData() {
     doc["temp"] = printerVariables.nozzletemp;
     doc["speed"] = globalVariables.fanSpeed;
     doc["speed2"] = globalVariables.fanSpeed2;
+    for (int fan = 0; fan < printerFanCount; ++fan) {
+        const char *name = printerFanSourceName(static_cast<PrinterFanSource>(fan));
+        if (printerVariables.fans[fan].known) doc["printerFans"][name] = printerVariables.fans[fan].percent;
+        else doc["printerFans"][name] = nullptr;
+    }
     String response;
     serializeJson(doc, response);
     webServer.send(200, "application/json", response);

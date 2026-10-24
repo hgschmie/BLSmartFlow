@@ -3,6 +3,7 @@
 #include <limits>
 #include "src/blflow/web-server.h"
 #include "src/blflow/fans.h"
+#include "src/blflow/mqtt-report.h"
 
 const char *legacyConfig = R"({"ssid":"test-network","appw":"test-password","printerIp":"192.0.2.83","accessCode":"TEST1234","serialNumber":"TESTSERIAL12345","bssi":"","debuging":true,"debugingchange":false,"mqttdebug":false,"fanPoints":[{"temp":0,"speed":0},{"temp":200,"speed":80},{"temp":400,"speed":100}]})";
 const char *newCurve = R"({"points":[{"temp":400,"speed":90},{"temp":0,"speed":10},{"temp":200,"speed":50}]})";
@@ -26,7 +27,11 @@ std::string savedConfig() { return *LittleFS.files.at(configPath); }
 void reboot() {
     printerConfig = PrinterConfig{};
     globalVariables = GlobalVariables{};
+    printerVariables = PrinterVariables{};
     loadFileSystem();
+}
+bool report(const char *json) {
+    return parsePrinterReport(reinterpret_cast<const uint8_t *>(json), strlen(json));
 }
 int options(std::map<std::string,String> params) {
     webServer.params = std::move(params);
@@ -68,6 +73,148 @@ template<class T> void check(const char *name, T test) {
 }
 
 int main() {
+    check("legacy settings leave following disabled", [] {
+        putConfig(legacyConfig); reboot();
+        assert(!printerConfig.followPrinterFan && !printerConfig.followPrinterFan2);
+        handleGetOptions(); auto json = response();
+        assert(json["followPrinterFan"] == false && json["followPrinterFan2"] == false);
+        assert(json["printerFanSource"] == "chamber");
+        handleSensorData(); json = response();
+        assert(json["printerFans"]["chamber"].isNull());
+    });
+    check("all four printer fans decode numeric and string speeds and drive outputs", [] {
+        assert(report(R"({"print":{"cooling_fan_speed":"3","big_fan1_speed":6,"big_fan2_speed":"12","heatbreak_fan_speed":15,"nozzle_temper":210}})"));
+        assert(printerVariables.nozzletemp == 210);
+        const char *sources[] = {"part", "auxiliary", "chamber", "heatbreak"};
+        const int expected[] = {20, 40, 80, 100};
+        for (int fan = 0; fan < 4; ++fan) {
+            assert(options({{"followPrinterFan", "on"}, {"printerFanSource", sources[fan]}}) == 200);
+            assertPWM(200, expected[fan], expected[fan]);
+        }
+        handleSensorData(); auto json = response();
+        for (int fan = 0; fan < 4; ++fan) assert(json["printerFans"][sources[fan]] == expected[fan]);
+    });
+    check("packed 8-bit PWM takes precedence and heatbreak remains independent", [] {
+        JsonDocument json; json["print"]["fan_gear"] = 0x009933ff;
+        json["print"]["cooling_fan_speed"] = "0";
+        json["print"]["heatbreak_fan_speed"] = "6";
+        std::string payload; serializeJson(json, payload); assert(report(payload.c_str()));
+        assert(printerVariables.fans[0].percent == 100);
+        assert(printerVariables.fans[1].percent == 20);
+        assert(printerVariables.fans[2].percent == 60);
+        assert(printerVariables.fans[3].percent == 40);
+        assert(report(R"({"print":{"fan_gear":"0"}})"));
+        assert(printerVariables.fans[0].percent == 0 && printerVariables.fans[2].percent == 0);
+        assert(printerVariables.fans[3].percent == 40);
+    });
+    check("following starts at zero, retains delta readings and holds through disconnects", [] {
+        assert(options({{"followPrinterFan", "on"}, {"printerFanSource", "chamber"}}) == 200);
+        assertPWM(300, 0, 0);
+        assert(report(R"({"print":{"big_fan2_speed":"9"}})"));
+        assertPWM(300, 60, 60);
+        assert(report(R"({"print":{"nozzle_temper":50,"cooling_fan_speed":15}})"));
+        assertPWM(50, 60, 60);
+        printerVariables.online = false; assertPWM(300, 60, 60);
+        assert(report(R"({"print":{"big_fan2_speed":0}})")); assertPWM(300, 0, 0);
+        reboot(); assert(printerConfig.followPrinterFan); assertPWM(300, 0, 0);
+    });
+    check("following a 70 percent chamber fan drives and reports 70 rather than 71", [] {
+        assert(options({{"followPrinterFan","on"},{"printerFanSource","chamber"}}) == 200);
+        // Captures the reported mismatch: packed PWM 180 rounded to 71% before.
+        for (int pwm : {178, 179, 180}) {
+            JsonDocument json; json["print"]["fan_gear"] = pwm << 16;
+            std::string payload; serializeJson(json,payload); assert(report(payload.c_str()));
+            assertPWM(200,70,70);
+            handleSensorData(); json = response();
+            assert(json["speed"] == 70 && json["printerFans"]["chamber"] == 70);
+        }
+        assert(report(R"({"print":{"big_fan2_speed":"11"}})")); assertPWM(200,70,70);
+        assert(options({{"staticfan","on"},{"staticfanspeed","71"}}) == 200);
+        assertPWM(200,71,71);
+        assert(options({{"staticfan","off"}}) == 200);
+        assert(curve(R"({"points":[{"temp":0,"speed":71}]})") == 200);
+        assertPWM(200,71,71);
+    });
+    check("packed fan steps and legacy fan steps match Studio while heatbreak stays separate", [] {
+        for (const auto &item : std::vector<std::pair<int,int>>{
+            {0,0},{25,10},{26,10},{51,20},{76,30},{102,40},{127,50},{128,50},
+            {153,60},{178,70},{180,70},{204,80},{229,90},{230,90},{255,100}}) {
+            JsonDocument json;
+            json["print"]["fan_gear"] = item.first * 0x010101;
+            std::string payload; serializeJson(json,payload); assert(report(payload.c_str()));
+            for (int fan=0; fan<3; ++fan) assert(printerVariables.fans[fan].percent == item.second);
+        }
+        assert(report(R"({"print":{"cooling_fan_speed":"5","big_fan1_speed":"8","big_fan2_speed":"11","heatbreak_fan_speed":"10"}})"));
+        assert(printerVariables.fans[0].percent == 30);
+        assert(printerVariables.fans[1].percent == 50);
+        assert(printerVariables.fans[2].percent == 70);
+        assert(printerVariables.fans[3].percent == 67);
+    });
+    check("malformed MQTT values cannot overwrite last valid speeds", [] {
+        report(R"({"print":{"cooling_fan_speed":6,"big_fan2_speed":12}})");
+        for (const char *bad : {"null", "true", "-1", "16", "1.5", "\"no\"", "\"\"", "\"15x\"", "\"999999999999999999999\"", "[]", "{}"}) {
+            const auto payload = std::string("{\"print\":{\"big_fan2_speed\":") + bad + "}}";
+            assert(!report(payload.c_str()));
+            assert(printerVariables.fans[2].percent == 80);
+        }
+        assert(!report("{\"print\":{\"big_fan2_speed\":0"));
+        assert(!report(R"({"print":{"fan_gear":"4294967296"}})"));
+        assert(printerVariables.fans[0].percent == 40 && printerVariables.fans[2].percent == 80);
+        assert(report(R"({"print":{"fan_gear":"invalid","big_fan2_speed":"3"}})"));
+        assert(printerVariables.fans[2].percent == 20);
+    });
+    check("independent following persists and synchronization preserves Fan 2", [] {
+        assert(options({{"fansSynchronized","off"},{"followPrinterFan","on"},{"printerFanSource","chamber"},
+                        {"followPrinterFan2","on"},{"printerFanSource2","part"}}) == 200);
+        reboot();
+        report(R"({"print":{"big_fan2_speed":12,"cooling_fan_speed":3}})"); assertPWM(200,80,20);
+        assert(options({{"fansSynchronized","on"},{"followPrinterFan2","off"},{"printerFanSource2","heatbreak"}}) == 200);
+        assertPWM(200,80,80);
+        assert(printerConfig.followPrinterFan2 && printerConfig.printerFanSource2 == PrinterFanSource::Part);
+        assert(options({{"fansSynchronized","off"}}) == 200); assertPWM(200,80,20);
+        handleGetOptions(); auto json=response();
+        assert(json["followPrinterFan2"] == true && json["printerFanSource2"] == "part");
+    });
+    check("first independent save clones the current following setting", [] {
+        assert(options({{"followPrinterFan","on"},{"printerFanSource","auxiliary"}}) == 200);
+        assert(printerConfig.fanGraph2.empty());
+        assert(options({{"fansSynchronized","off"}}) == 200); reboot();
+        assert(printerConfig.followPrinterFan2 && printerConfig.printerFanSource2 == PrinterFanSource::Auxiliary);
+    });
+    check("override switches exclude each other and both off restore the curve", [] {
+        assert(options({{"fansSynchronized","off"},{"staticfan","on"},{"staticfanspeed","23"},
+                        {"staticfan2","on"},{"staticfanspeed2","37"}}) == 200);
+        assert(options({{"followPrinterFan","on"},{"followPrinterFan2","on"}}) == 200);
+        assert(!printerConfig.staticFan && !printerConfig.staticFan2);
+        report(R"({"print":{"big_fan2_speed":12}})"); assertPWM(180,80,80);
+        assert(options({{"staticfan","on"},{"staticfan2","on"}}) == 200);
+        assert(!printerConfig.followPrinterFan && !printerConfig.followPrinterFan2); assertPWM(180,23,37);
+        assert(options({{"staticfan","off"},{"followPrinterFan","off"},{"staticfan2","off"},{"followPrinterFan2","off"}}) == 200);
+        assertPWM(180,50,50);
+    });
+    check("invalid or conflicting follow settings do not change saved configuration", [] {
+        assert(options({{"fansSynchronized","off"},{"followPrinterFan","on"}}) == 200);
+        const auto disk=savedConfig();
+        for (const auto &params : std::vector<std::map<std::string,String>>{
+            {{"staticfan","on"},{"followPrinterFan","on"}}, {{"staticfan2","on"},{"followPrinterFan2","on"}},
+            {{"printerFanSource","unknown"}}, {{"printerFanSource2",""}}, {{"followPrinterFan","invalid"}}}) {
+            assert(options(params)==400); assert(savedConfig()==disk); assert(printerConfig.followPrinterFan);
+        }
+        failRename=true;
+        assert(options({{"followPrinterFan","off"},{"followPrinterFan2","on"},{"printerFanSource2","heatbreak"}})==500);
+        assert(printerConfig.followPrinterFan && printerConfig.printerFanSource2 == PrinterFanSource::Chamber);
+        assert(savedConfig()==disk);
+    });
+    check("invalid saved sources and conflicting overrides normalize without erasing configuration", [] {
+        JsonDocument json; deserializeJson(json,legacyConfig);
+        json["followPrinterFan"]=true; json["printerFanSource"]="invalid";
+        std::string payload; serializeJson(json,payload); putConfig(payload); reboot();
+        assert(!printerConfig.followPrinterFan); assert(savedConfig()==payload); assertCredentials();
+        json["printerFanSource"]="part"; json["staticFan"]=true; json["staticFanSpeed"]=27;
+        payload.clear(); serializeJson(json,payload); putConfig(payload); reboot();
+        assert(printerConfig.staticFan && !printerConfig.followPrinterFan); assertPWM(200,27,27);
+        assert(savedConfig()==payload);
+    });
     check("legacy configuration retains credentials and curve, defaults to synchronized", [] {
         putConfig(legacyConfig); reboot(); assertCredentials();
         assert(printerConfig.fansSynchronized);

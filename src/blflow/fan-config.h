@@ -29,6 +29,8 @@ inline void initializeSecondFan(PrinterConfig &config) {
         config.fanGraph2 = config.fanGraph;
         config.staticFan2 = config.staticFan;
         config.staticFanSpeed2 = config.staticFanSpeed;
+        config.followPrinterFan2 = config.followPrinterFan;
+        config.printerFanSource2 = config.printerFanSource;
     }
 }
 

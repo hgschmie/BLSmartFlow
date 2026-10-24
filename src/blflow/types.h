@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "fan-curve.h"
+#include "printer-fan.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -10,7 +11,7 @@ extern "C"
 #endif
 
     typedef struct PrinterVaraiblesStruct{
-        int chamberfan = 0;
+        PrinterFanReading fans[printerFanCount];
         double nozzletemp = 0;
         bool online = false;
         String errorcode = "";
@@ -47,8 +48,12 @@ extern "C"
         bool fansSynchronized = true;
         bool staticFan = false;
         int staticFanSpeed = 0;
+        bool followPrinterFan = false;
+        PrinterFanSource printerFanSource = PrinterFanSource::Chamber;
         bool staticFan2 = false;
         int staticFanSpeed2 = 0;
+        bool followPrinterFan2 = false;
+        PrinterFanSource printerFanSource2 = PrinterFanSource::Chamber;
 
         FanCurve fanGraph = defaultFanCurve();
         // Empty until independent settings are first saved; then retained in sync mode.
