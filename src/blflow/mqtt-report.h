@@ -3,6 +3,7 @@
 
 #include <ArduinoJson.h>
 #include "types.h"
+#include "post-print.h"
 
 // MQTT uses both JSON numbers and decimal strings. Reject malformed values
 // rather than converting them to zero and unexpectedly stopping an output.
@@ -48,6 +49,7 @@ inline bool parsePrinterReport(const uint8_t *payload, size_t length) {
     JsonDocument filter;
     filter["print"]["fan_gear"] = true;
     filter["print"]["nozzle_temper"] = true;
+    filter["print"]["gcode_state"] = true;
     const char *fields[] = {"cooling_fan_speed", "big_fan1_speed", "big_fan2_speed", "heatbreak_fan_speed"};
     for (const char *field : fields) filter["print"][field] = true;
     JsonDocument message;
@@ -62,7 +64,7 @@ inline bool parsePrinterReport(const uint8_t *payload, size_t length) {
     }
 
     JsonObjectConst report = message["print"].as<JsonObjectConst>();
-    bool changed = false;
+    bool changed = recordPrintState(report["gcode_state"].as<const char *>());
     uint32_t gear;
     // Bambu Studio's DevFan::ParseV1_0 uses 8-bit PWM values in fan_gear.
     // Prefer packed readings, following the same precedence as Bambu Studio.

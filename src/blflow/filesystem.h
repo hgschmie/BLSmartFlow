@@ -32,6 +32,9 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig){
     json["staticFanSpeed"] = config.staticFanSpeed;
     json["followPrinterFan"] = config.followPrinterFan;
     json["printerFanSource"] = printerFanSourceName(config.printerFanSource);
+    json["postPrint"] = config.postPrint.enabled;
+    json["postPrintSeconds"] = config.postPrint.seconds;
+    json["postPrintSpeed"] = config.postPrint.speed;
     writeFanCurve(json["fanPoints"].to<JsonArray>(), config.fanGraph);
     if (!config.fanGraph2.empty()) {
         writeFanCurve(json["fanPoints2"].to<JsonArray>(), config.fanGraph2);
@@ -39,6 +42,9 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig){
         json["staticFanSpeed2"] = config.staticFanSpeed2;
         json["followPrinterFan2"] = config.followPrinterFan2;
         json["printerFanSource2"] = printerFanSourceName(config.printerFanSource2);
+        json["postPrint2"] = config.postPrint2.enabled;
+        json["postPrintSeconds2"] = config.postPrint2.seconds;
+        json["postPrintSpeed2"] = config.postPrint2.speed;
     }
     if (json.overflowed()) {
         Serial.println(F("Not enough memory to save config"));
@@ -116,6 +122,7 @@ void loadFileSystem(){
         loaded.staticFan = json["staticFan"] | false;
         loaded.staticFanSpeed = clampFanSpeed(json["staticFanSpeed"] | 0);
         loaded.followPrinterFan = (json["followPrinterFan"] | false) && !loaded.staticFan;
+        readPostPrintSettings(json["postPrint"], json["postPrintSeconds"], json["postPrintSpeed"], loaded.postPrint);
         if (!readPrinterFanSource(json["printerFanSource"], loaded.printerFanSource)) {
             loaded.followPrinterFan = false;
         }
@@ -130,6 +137,7 @@ void loadFileSystem(){
             loaded.staticFan2 = json["staticFan2"] | false;
             loaded.staticFanSpeed2 = clampFanSpeed(json["staticFanSpeed2"] | 0);
             loaded.followPrinterFan2 = (json["followPrinterFan2"] | false) && !loaded.staticFan2;
+            readPostPrintSettings(json["postPrint2"], json["postPrintSeconds2"], json["postPrintSpeed2"], loaded.postPrint2);
             if (!readPrinterFanSource(json["printerFanSource2"], loaded.printerFanSource2)) {
                 loaded.followPrinterFan2 = false;
             }

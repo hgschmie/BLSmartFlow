@@ -10,6 +10,7 @@
 #include "AutoGrowBufferStream.h"
 #include "types.h"
 #include "mqtt-report.h"
+#include "fans.h"
 
 WiFiClientSecure wifiSecureClient;
 PubSubClient mqttClient(wifiSecureClient);
@@ -136,11 +137,14 @@ void setupMqtt(){
 
 void mqttloop(){
     if(WiFi.status() != WL_CONNECTED){
+        printerCommunicationLost();
+        fanloop(); // Restore normal outputs before any blocking Wi-Fi reconnect.
         //Abort MQTT connection attempt when no Wifi
         return;
     }
     if (!mqttClient.connected()){
-        printerVariables.online = false;
+        printerCommunicationLost();
+        fanloop(); // Restore normal outputs before the blocking MQTT reconnect.
         //Only sent the timer from the first instance of a MQTT disconnect
         if(printerVariables.disconnectMQTTms == 0) {
             printerVariables.disconnectMQTTms = millis();
@@ -157,6 +161,10 @@ void mqttloop(){
         printerVariables.disconnectMQTTms = 0;
     }
     mqttClient.loop();
+    if (!mqttClient.connected()) {
+        printerCommunicationLost();
+        fanloop();
+    }
     delay(10);
 }
 

@@ -13,6 +13,7 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 - Per-fan temperature curve editing
 - Per-fan static speed overrides
 - Per-fan following the reported speed of a printer fan
+- Per-fan Post Print timers with a chosen duration and speed
 - Separate animated fan indicators
 
 ### Changelog
@@ -53,6 +54,8 @@ Versions use **major.feature.build**: the first number changes for a major overh
 
 The compiler and `.firmware` output filenames use the same reserved version. The displayed date comes from the build machine's local date. Web pages load the version from the firmware instead of keeping a separate hardcoded copy.
 
+Each build also writes the OTA-ready image to `build/esp32dev/firmware-<version>.bin`, for example `firmware-1.3.8.bin`. Use this versioned file when uploading through the web UI. PlatformIO's internal `firmware.bin` remains available for its upload and merge steps.
+
 #### Independent Fan Control
 
 **Synchronize Fans: On** uses Fan 1's curve and static-speed override for both outputs. This is also the default after upgrading from 1.0.x. Fan 1 is GPIO 17; Fan 2 is GPIO 16. Both curves use the printer's nozzle temperature.
@@ -79,6 +82,18 @@ The packed `print.fan_gear` field contains three 0–255 values (part, auxiliary
 Each source starts at **0% after boot** and keeps its last valid speed when MQTT disconnects, a field is omitted, or a value is malformed. An explicitly reported zero stops the following output. Speeds are kept in RAM; only the follow settings are saved to flash. Existing configurations load with following Off.
 
 `/getOptions` and `/submitOptions` add `followPrinterFan` and `printerFanSource` (and `followPrinterFan2` / `printerFanSource2`). Sources are `part`, `auxiliary`, `chamber`, or `heatbreak`. The form posts explicit `on`/`off` values; requests enabling both overrides are rejected. `/sensorData` adds `printerFans`, containing each source's last percentage or `null` before its first report.
+
+#### Post Print
+
+Enable **Post Print** below **Follow Printer Fan**, enter a duration in seconds (1–86400) and a speed (0–100%), and save. For example, **600 s at 100%** runs for ten minutes. Post Print can be enabled alongside either normal override; it does not change the Static Fan Speed or Follow Printer Fan switches.
+
+After observing `RUNNING` on the current MQTT connection, the next `FINISH`, `FAILED`, or `IDLE` report starts the timer. Partial updates and intervening `PREPARE` or `PAUSE` reports preserve that observation. Repeated end reports do not restart it. `PREPARE`, `RUNNING`, and `PAUSE` do not cancel or alter an already running countdown.
+
+During the timer, its speed takes priority over the normal mode, and **Post Print: 600s** (with the remaining seconds) replaces the source label beneath the fan percentage. Telemetry refreshes every second. When the timer expires, the fan returns to its current static speed, last reported printer-fan speed, or temperature curve. A reset or detected Wi-Fi/MQTT disconnect clears both timers and the previous running observation; reconnecting to an end state cannot start an old timer. Only settings are stored in flash.
+
+**Synchronize Fans: On** applies Fan 1's Post Print settings and countdown to both outputs, retaining Fan 2's settings for later. Changing synchronization cancels active timers. Saving a change to a fan's Post Print settings cancels its current timer; failed saves leave it running. Older configurations default Post Print to Off, with editable defaults of 600 seconds and 100%.
+
+`/getOptions` and `/submitOptions` use `postPrint`, `postPrintSeconds`, and `postPrintSpeed`, with a `2` suffix for Fan 2. `/sensorData` returns `postPrintRemaining` and `postPrintRemaining2` as whole seconds rounded up, or zero when inactive. Synchronized outputs report the same remaining time.
 
 #### Tests
 

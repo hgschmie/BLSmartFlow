@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -19,6 +20,7 @@ public:
     String(int n) : std::string(std::to_string(n)) {}
     String(float n) : std::string(std::to_string(n)) {}
     String(double n, int = 2) : std::string(std::to_string(n)) {}
+    String(long n, int) : std::string(std::to_string(n)) {}
     int indexOf(char c) const { auto p=find(c); return p==npos ? -1 : int(p); }
     int toInt() const { return std::atoi(c_str()); }
     size_t write(uint8_t c) { push_back(char(c)); return 1; }
@@ -35,7 +37,49 @@ struct SerialMock {
     size_t write(const uint8_t*, size_t n) { return n; }
 } Serial;
 struct ESPMock { void restart() {} } ESP;
+inline uint32_t mockMillis = 0;
+inline unsigned long millis() { return mockMillis; }
 inline void delay(int) {}
+
+// Connectivity substitutes exercise the real MQTT loop's fallback paths.
+using byte = uint8_t;
+constexpr int WL_CONNECTED = 3, HEX = 16;
+inline long random(long maximum) { return maximum - 1; }
+struct WiFiMock {
+    int connectionStatus = WL_CONNECTED;
+    int status() { return connectionStatus; }
+} WiFi;
+struct WiFiClientSecure { void setInsecure() {} };
+class Print {
+public:
+    virtual ~Print() = default;
+    virtual size_t write(uint8_t) = 0;
+};
+class Stream : public Print {
+public:
+    virtual int read() = 0;
+    virtual int available() = 0;
+    virtual int peek() = 0;
+    virtual void flush() = 0;
+};
+struct PubSubClient {
+    bool isConnected = true, connectResult = false, dropDuringLoop = false;
+    std::function<void()> beforeConnect;
+    explicit PubSubClient(WiFiClientSecure &) {}
+    bool connected() { return isConnected; }
+    bool connect(const char *, const char *, const char *) {
+        if (beforeConnect) beforeConnect();
+        return isConnected = connectResult;
+    }
+    int state() { return isConnected ? 0 : -1; }
+    void loop() { if (dropDuringLoop) isConnected = false; }
+    template<class... T> void subscribe(T...) {}
+    template<class... T> void setBufferSize(T...) {}
+    template<class... T> void setServer(T...) {}
+    template<class... T> void setStream(T...) {}
+    template<class... T> void setCallback(T...) {}
+    template<class... T> void setSocketTimeout(T...) {}
+};
 inline bool failOpen=false, failRename=false, shortRead=false;
 inline size_t writeBudget = SIZE_MAX;
 class File {

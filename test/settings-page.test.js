@@ -125,6 +125,8 @@ test('legacy options default to one synchronized curve and feature section', asy
   const page = await readyPage();
   assert.equal(page.get('fansSynchronized').checked, true);
   assert.equal(page.get('fan2Features').hidden, true);
+  assert.equal(page.get('fan1FeaturesTitle').hidden, true);
+  assert.equal(page.get('fan1FeaturesTitle').textContent, '');
   assert.equal(page.get('fan2Indicator').hidden, true);
   assert.equal(page.charts[0].data.datasets.length, 1);
   assert.equal(page.charts[0].data.datasets[0].label, 'Both fans');
@@ -276,7 +278,8 @@ test('independent mode is only applied after successful settings save and reload
   const page = await readyPage();
   page.get('staticfan').checked = true; page.get('staticfanspeed').value = '37';
   page.get('fansSynchronized').checked = false; page.trigger('fansSynchronized', 'change');
-  assert.equal(page.get('fan1FeaturesTitle').textContent, 'Fan 1 features');
+  assert.equal(page.get('fan1FeaturesTitle').textContent, 'Fan 1');
+  assert.equal(page.get('fan1FeaturesTitle').hidden, false);
   assert.equal(page.get('fan2Features').hidden, false);
   assert.equal(page.get('staticfan2').checked, true);
   assert.equal(page.get('staticfanspeed2').value, '37');
@@ -483,4 +486,98 @@ test('switching the editing selector clears the previous point selection', async
   page.get('selectedFan').checked = true; page.trigger('selectedFan','change');
   assert.equal(page.get('editSection').style.display,'none');
   assert.equal(page.state('selectedIndex'),null);
+});
+
+test('Post Print defaults off and can be enabled alongside either normal override', async () => {
+  const page = await readyPage(separateConfig);
+  for (const suffix of ['', '2']) {
+    assert.equal(page.get('postPrint' + suffix).checked, false);
+    assert.equal(page.get('postPrintSeconds' + suffix).value, 600);
+    assert.equal(page.get('postPrintSpeed' + suffix).value, 100);
+    page.get('postPrint' + suffix).checked = true;
+    page.trigger('postPrint' + suffix, 'change');
+    for (const mode of ['staticfan', 'followPrinterFan']) {
+      page.get(mode + suffix).checked = true;
+      page.trigger(mode + suffix, 'change');
+      assert.equal(page.get('postPrint' + suffix).checked, true);
+      page.get('postPrint' + suffix).checked = false;
+      page.trigger('postPrint' + suffix, 'change');
+      assert.equal(page.get(mode + suffix).checked, true);
+      page.get('postPrint' + suffix).checked = true;
+      page.trigger('postPrint' + suffix, 'change');
+      assert.equal(page.get(mode + suffix).checked, true);
+    }
+  }
+});
+
+test('Post Print saves independent values and explicitly saves Off without altering following', async () => {
+  const page = await readyPage({ ...separateConfig, staticfans2: false,
+    followPrinterFan: true, printerFanSource: 'chamber', postPrint: true, postPrintSeconds: 600, postPrintSpeed: 100,
+    postPrint2: true, postPrintSeconds2: 30, postPrintSpeed2: 40 });
+  assert.equal(page.get('postPrint2').checked, true);
+  assert.equal(page.get('postPrintSeconds2').value, 30);
+  page.get('postPrint').checked = false;
+  page.trigger('postPrint', 'change');
+  page.get('postPrintSeconds2').value = '120';
+  page.get('postPrintSpeed2').value = '0';
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.get('postPrint'), 'off');
+  assert.equal(body.get('followPrinterFan'), 'on');
+  assert.equal(body.get('postPrint2'), 'on');
+  assert.equal(body.get('postPrintSeconds2'), '120');
+  assert.equal(body.get('postPrintSpeed2'), '0');
+  page.requests[1].respond(500, 'Flash write failed');
+  assert.equal(page.get('fan1Source').textContent, 'Chamber Fan');
+  assert.match(page.get('settings-status').textContent, /Flash write failed/);
+});
+
+test('first split clones Post Print and synchronization omits all dormant Fan 2 inputs', async () => {
+  const page = await readyPage({ ...baseConfig, postPrint: true, postPrintSeconds: 90, postPrintSpeed: 70 });
+  page.get('fansSynchronized').checked = false;
+  page.trigger('fansSynchronized', 'change');
+  assert.equal(page.get('postPrint2').checked, true);
+  assert.equal(page.get('postPrintSeconds2').value, 90);
+  assert.equal(page.get('postPrintSpeed2').value, 70);
+  assert.equal(page.get('postPrintSeconds2').disabled, false);
+  page.get('postPrintSeconds2').value = '45';
+  page.get('fansSynchronized').checked = true;
+  page.trigger('fansSynchronized', 'change');
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  for (const name of ['postPrint2', 'postPrintSeconds2', 'postPrintSpeed2']) {
+    assert.equal(body.has(name), false);
+    assert.equal(page.get(name).disabled, true);
+  }
+  assert.equal(page.get('postPrintSeconds2').value, '45');
+});
+
+test('telemetry shows separate Post Print countdowns and restores normal source labels at expiration', async () => {
+  const page = await readyPage({ ...separateConfig, followPrinterFan: true, printerFanSource: 'chamber' });
+  for (const [remaining, remaining2] of [[600, 90], [510, 0], [0, 0]]) {
+    const polling = page.context.fetchSensorData();
+    await page.respond('/sensorData', { temp: 20, speed: remaining ? 100 : 70, speed2: remaining2 ? 50 : 69,
+      postPrintRemaining: remaining, postPrintRemaining2: remaining2 });
+    await polling;
+    assert.equal(page.get('fan1Source').textContent, remaining ? `Post Print: ${remaining}s` : 'Chamber Fan');
+    assert.equal(page.get('fan2Source').textContent, remaining2 ? `Post Print: ${remaining2}s` : '');
+    assert.equal(page.get('fan1Source').hidden, false);
+    assert.equal(page.get('fan2Source').hidden, false);
+    assert.equal(page.get('fan1Percent').textContent, remaining ? 100 : 70);
+  }
+});
+
+test('failed telemetry clears stale countdowns and pending polls cannot pile up', async () => {
+  const page = await readyPage();
+  page.context.fetchSensorData();
+  await page.respond('/sensorData', { temp: 20, speed: 100, speed2: 100, postPrintRemaining: 10, postPrintRemaining2: 10 });
+  assert.equal(page.get('fan1Source').textContent, 'Post Print: 10s');
+  page.context.fetchSensorData();
+  page.context.fetchSensorData();
+  assert.equal(page.fetches.filter(request => request.url === '/sensorData' && !request.done).length, 1);
+  await page.respond('/sensorData', {}, 500);
+  assert.equal(page.get('fan1Source').textContent, '');
+  page.context.fetchSensorData();
+  await page.respond('/sensorData', { temp: 20, speed: 100, speed2: 100, postPrintRemaining: 8, postPrintRemaining2: 8 });
+  assert.equal(page.get('fan1Source').textContent, 'Post Print: 8s');
 });

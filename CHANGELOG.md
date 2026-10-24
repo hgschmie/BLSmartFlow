@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.3.12 — 2026-10-23
+
+- Made fan settings percentage fields compact for three digits and Post Print duration fields for four digits, with room for the number controls. Changed the duration label from "s" to "seconds".
+
+## 1.3.11 — 2026-10-23
+
+- Widened the Printer Information text fields and matched their input font size to the fan settings fields.
+
+## 1.3.10 — 2026-10-23
+
+- Widened Settings to match the Fan Graph panel on desktop, kept the mobile layout, and aligned the firmware footer with both panels.
+
+## 1.3.9 — 2026-10-23
+
+- Moved save notifications to the top right of the page.
+- Updated Printer Information with matching label typography, right-aligned input fields, no trailing colons, and more space beneath the heading. Fields stack on narrow screens.
+
+## 1.3.8 — 2026-10-23
+
+- Matched the debugging switches' label font and row spacing to the fan controls.
+- Added versioned OTA filenames such as `build/esp32dev/firmware-1.3.8.bin` to the build output.
+
+## 1.3.7 — 2026-10-23
+
+- Aligned settings switches on the left with their descriptions beside them and parameter controls on the right. Removed the Synchronize Fans On/Off labels.
+- Simplified independent fan headings to **Fan 1** and **Fan 2**, and hid the fan heading in synchronized mode.
+
+## 1.3.6 — 2026-10-23
+
+- Added independent **Post Print** switches, durations in seconds, and speed percentages. Timers temporarily override static speed, printer fan following, or the temperature curve after a running print finishes, fails, or becomes idle.
+- Added live Post Print countdowns below the fan percentages. Timers clear on reset or Wi-Fi/MQTT loss and do not restart from repeated end reports or an end state received after reconnecting.
+- Preserve both fans' Post Print settings across synchronization changes and restarts; existing configurations default the feature to Off.
+- Made the firmware version footer half its previous text size and left-aligned.
+- Added timer, connection-loss, persistence, input-validation, and UI regression coverage.
+
 ## 1.2.5 — 2026-10-23
 
 - Reserved an empty source-label line beneath fans that are not following, keeping the two fan images aligned.

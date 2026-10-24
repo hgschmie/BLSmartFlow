@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "fan-curve.h"
 #include "printer-fan.h"
+#include "post-print-types.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -14,6 +15,8 @@ extern "C"
         PrinterFanReading fans[printerFanCount];
         double nozzletemp = 0;
         bool online = false;
+        bool printWasRunning = false;
+        PostPrintRun postPrint[2];
         String errorcode = "";
         //Time since
         unsigned long disconnectMQTTms = 0;        
@@ -54,6 +57,8 @@ extern "C"
         int staticFanSpeed2 = 0;
         bool followPrinterFan2 = false;
         PrinterFanSource printerFanSource2 = PrinterFanSource::Chamber;
+        PostPrintSettings postPrint;
+        PostPrintSettings postPrint2;
 
         FanCurve fanGraph = defaultFanCurve();
         // Empty until independent settings are first saved; then retained in sync mode.

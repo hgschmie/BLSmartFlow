@@ -31,7 +31,19 @@ inline void initializeSecondFan(PrinterConfig &config) {
         config.staticFanSpeed2 = config.staticFanSpeed;
         config.followPrinterFan2 = config.followPrinterFan;
         config.printerFanSource2 = config.printerFanSource;
+        config.postPrint2 = config.postPrint;
     }
+}
+
+inline void readPostPrintSettings(JsonVariantConst enabled, JsonVariantConst seconds,
+                                  JsonVariantConst speed, PostPrintSettings &settings) {
+    // Missing fields in older files keep the feature off. Invalid values cannot
+    // activate a timer or produce an unsafe duration after a firmware upgrade.
+    const bool validSeconds = seconds.is<int>() && seconds.as<int>() >= 1 && seconds.as<int>() <= postPrintMaxSeconds;
+    const bool validSpeed = speed.is<int>() && speed.as<int>() >= 0 && speed.as<int>() <= 100;
+    if (validSeconds) settings.seconds = seconds.as<int>();
+    if (validSpeed) settings.speed = speed.as<int>();
+    settings.enabled = enabled.is<bool>() && enabled.as<bool>() && validSeconds && validSpeed;
 }
 
 #endif

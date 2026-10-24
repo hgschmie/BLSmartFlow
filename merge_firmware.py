@@ -14,6 +14,7 @@ BOARD_CONFIG = env.BoardConfig()
 
 project_name = env.GetProjectOption("custom_project_name") or "Firmware"
 version = env["FIRMWARE_VERSION"]
+VERSIONED_APP_BIN = os.path.normpath(os.path.join(BUILD_DIR, f"firmware-{version}.bin"))
 firmware_filename_merged = f"{project_name}_V{version}.bin"
 firmware_filename_ota = f"{project_name}_V{version}.bin.ota"
 
@@ -21,6 +22,8 @@ firmware_path_merged = os.path.normpath(os.path.join(env.subst("$PROJECT_DIR"), 
 firmware_path_ota = os.path.normpath(os.path.join(env.subst("$PROJECT_DIR"), ".firmware", firmware_filename_ota))
 
 def copy_bin_as_ota(source, target, env):
+    shutil.copyfile(APP_BIN, VERSIONED_APP_BIN)
+    print(f'Firmware (OTA, versioned) copied to: {VERSIONED_APP_BIN}')
     os.makedirs(os.path.dirname(firmware_path_ota), exist_ok=True)
     shutil.copyfile(APP_BIN, firmware_path_ota)
     print(f'Firmware (OTA, uncompressed) copied to: {firmware_path_ota}')

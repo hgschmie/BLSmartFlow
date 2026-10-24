@@ -9,6 +9,7 @@
 #include <ESPmDNS.h>
 #include <Update.h>
 #include "filesystem.h"
+#include "fans.h"
 
 
 WebServer webServer(80);
@@ -64,6 +65,9 @@ void handleGetOptions(){
     doc["staticfanspeed"] = printerConfig.staticFanSpeed;
     doc["followPrinterFan"] = printerConfig.followPrinterFan;
     doc["printerFanSource"] = printerFanSourceName(printerConfig.printerFanSource);
+    doc["postPrint"] = printerConfig.postPrint.enabled;
+    doc["postPrintSeconds"] = printerConfig.postPrint.seconds;
+    doc["postPrintSpeed"] = printerConfig.postPrint.speed;
     doc["fansSynchronized"] = printerConfig.fansSynchronized;
     const bool fan2Configured = !printerConfig.fanGraph2.empty();
     doc["fan2Configured"] = fan2Configured;
@@ -71,6 +75,10 @@ void handleGetOptions(){
     doc["staticfanspeed2"] = fan2Configured ? printerConfig.staticFanSpeed2 : printerConfig.staticFanSpeed;
     doc["followPrinterFan2"] = fan2Configured ? printerConfig.followPrinterFan2 : printerConfig.followPrinterFan;
     doc["printerFanSource2"] = printerFanSourceName(fan2Configured ? printerConfig.printerFanSource2 : printerConfig.printerFanSource);
+    const auto &postPrint2 = fan2Configured ? printerConfig.postPrint2 : printerConfig.postPrint;
+    doc["postPrint2"] = postPrint2.enabled;
+    doc["postPrintSeconds2"] = postPrint2.seconds;
+    doc["postPrintSpeed2"] = postPrint2.speed;
 
     // Debugging
     doc["debuging"] = printerConfig.debuging;
@@ -86,17 +94,24 @@ void handleGetOptions(){
 }
 
 // All web updates are staged, persisted, then applied to the running controller.
-bool readSpeedArgument(const char *name, int &speed) {
+bool readIntegerArgument(const char *name, int &value, int minimum, int maximum) {
     if (!webServer.hasArg(name)) return true;
-    const String value = webServer.arg(name);
-    if (value.length() == 0 || value.length() > 3) return false;
-    for (size_t i = 0; i < value.length(); ++i) {
-        if (value[i] < '0' || value[i] > '9') return false;
+    const String arg = webServer.arg(name);
+    if (arg.length() == 0 || arg.length() > 10) return false;
+    int parsed = 0;
+    for (size_t i = 0; i < arg.length(); ++i) {
+        if (arg[i] < '0' || arg[i] > '9') return false;
+        const int digit = arg[i] - '0';
+        if (parsed > (maximum - digit) / 10) return false;
+        parsed = parsed * 10 + digit;
     }
-    const int parsed = value.toInt();
-    if (parsed > 100) return false;
-    speed = parsed;
+    if (parsed < minimum || parsed > maximum) return false;
+    value = parsed;
     return true;
+}
+
+bool readSpeedArgument(const char *name, int &speed) {
+    return readIntegerArgument(name, speed, 0, 100);
 }
 
 bool readBoolArgument(const char *name, bool &value) {
@@ -106,6 +121,13 @@ bool readBoolArgument(const char *name, bool &value) {
     else if (arg == "off" || arg == "false") value = false;
     else return false;
     return true;
+}
+
+bool readPostPrintArguments(const char *enabledName, const char *secondsName, const char *speedName,
+                            PostPrintSettings &settings) {
+    return readBoolArgument(enabledName, settings.enabled) &&
+        readIntegerArgument(secondsName, settings.seconds, 1, postPrintMaxSeconds) &&
+        readSpeedArgument(speedName, settings.speed);
 }
 
 bool readFanModeArguments(const char *staticName, const char *followName, const char *sourceName,
@@ -154,12 +176,20 @@ void submitOptions() {
         webServer.send(400, "text/plain", "Invalid Fan 1 settings; choose one override, a valid printer fan, and an integer speed from 0 to 100");
         return;
     }
+    if (!readPostPrintArguments("postPrint", "postPrintSeconds", "postPrintSpeed", candidate.postPrint)) {
+        webServer.send(400, "text/plain", "Invalid Fan 1 Post Print settings; use 1 to 86400 whole seconds and a speed from 0 to 100");
+        return;
+    }
     if (!candidate.fansSynchronized) {
         initializeSecondFan(candidate);
         if (!readFanModeArguments("staticfan2", "followPrinterFan2", "printerFanSource2",
                 candidate.staticFan2, candidate.followPrinterFan2, candidate.printerFanSource2) ||
             !readSpeedArgument("staticfanspeed2", candidate.staticFanSpeed2)) {
             webServer.send(400, "text/plain", "Invalid Fan 2 settings; choose one override, a valid printer fan, and an integer speed from 0 to 100");
+            return;
+        }
+        if (!readPostPrintArguments("postPrint2", "postPrintSeconds2", "postPrintSpeed2", candidate.postPrint2)) {
+            webServer.send(400, "text/plain", "Invalid Fan 2 Post Print settings; use 1 to 86400 whole seconds and a speed from 0 to 100");
             return;
         }
     }
@@ -170,7 +200,9 @@ void submitOptions() {
         webServer.send(500, "text/plain", "Failed to save settings to flash");
         return;
     }
+    cancelChangedPostPrint(printerConfig, candidate);
     printerConfig = std::move(candidate);
+    fanloop();
     webServer.send(200, "text/plain", "Settings saved");
 }
 
@@ -213,10 +245,14 @@ void handleUpdateFanConfig() {
 }
 
 void handleSensorData() {
+    const uint32_t now = millis();
+    fanloop(now);
     JsonDocument doc;
     doc["temp"] = printerVariables.nozzletemp;
     doc["speed"] = globalVariables.fanSpeed;
     doc["speed2"] = globalVariables.fanSpeed2;
+    doc["postPrintRemaining"] = postPrintSecondsRemaining(0, now);
+    doc["postPrintRemaining2"] = postPrintSecondsRemaining(1, now);
     for (int fan = 0; fan < printerFanCount; ++fan) {
         const char *name = printerFanSourceName(static_cast<PrinterFanSource>(fan));
         if (printerVariables.fans[fan].known) doc["printerFans"][name] = printerVariables.fans[fan].percent;

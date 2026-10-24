@@ -4,6 +4,7 @@
 #include "src/blflow/web-server.h"
 #include "src/blflow/fans.h"
 #include "src/blflow/mqtt-report.h"
+#include "src/blflow/mqttmanager.h"
 
 const char *legacyConfig = R"({"ssid":"test-network","appw":"test-password","printerIp":"192.0.2.83","accessCode":"TEST1234","serialNumber":"TESTSERIAL12345","bssi":"","debuging":true,"debugingchange":false,"mqttdebug":false,"fanPoints":[{"temp":0,"speed":0},{"temp":200,"speed":80},{"temp":400,"speed":100}]})";
 const char *newCurve = R"({"points":[{"temp":400,"speed":90},{"temp":0,"speed":10},{"temp":200,"speed":50}]})";
@@ -19,6 +20,12 @@ void reset() {
     webServer.params.clear();
     webServer.responses.clear();
     pwmValues.clear();
+    mockMillis = 0;
+    WiFi.connectionStatus = WL_CONNECTED;
+    mqttClient.isConnected = true;
+    mqttClient.connectResult = mqttClient.dropDuringLoop = false;
+    mqttClient.beforeConnect = {};
+    mqttattempt = 0;
 }
 void putConfig(const std::string &json) {
     LittleFS.files[configPath] = std::make_shared<std::string>(json);
@@ -28,6 +35,7 @@ void reboot() {
     printerConfig = PrinterConfig{};
     globalVariables = GlobalVariables{};
     printerVariables = PrinterVariables{};
+    mockMillis = 0;
     loadFileSystem();
 }
 bool report(const char *json) {
@@ -72,7 +80,10 @@ template<class T> void check(const char *name, T test) {
     reset(); test(); std::cout << "PASS: " << name << '\n';
 }
 
+#include "post-print-tests.h"
+
 int main() {
+    postPrintTests();
     check("legacy settings leave following disabled", [] {
         putConfig(legacyConfig); reboot();
         assert(!printerConfig.followPrinterFan && !printerConfig.followPrinterFan2);

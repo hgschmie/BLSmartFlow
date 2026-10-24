@@ -2,6 +2,7 @@
 #define _FAN
 
 #include "types.h"
+#include "post-print.h"
 
 const int FanPower1 = 17;
 const int FanPower2 = 16;
@@ -18,14 +19,17 @@ int outputFanSpeed(bool staticEnabled, int staticSpeed, bool followEnabled,
     return calculateFanSpeed(curve, temperature);
 }
 
-void fanloop() {
+void fanloop(uint32_t now = millis()) {
+    updatePostPrint(now);
     const float temperature = printerVariables.nozzletemp;
-    const int speed1 = outputFanSpeed(printerConfig.staticFan, printerConfig.staticFanSpeed,
+    int speed1 = outputFanSpeed(printerConfig.staticFan, printerConfig.staticFanSpeed,
         printerConfig.followPrinterFan, printerConfig.printerFanSource, printerConfig.fanGraph, temperature);
+    if (printerVariables.postPrint[0].active) speed1 = printerVariables.postPrint[0].speed;
     int speed2 = speed1;
     if (!printerConfig.fansSynchronized) {
         speed2 = outputFanSpeed(printerConfig.staticFan2, printerConfig.staticFanSpeed2,
             printerConfig.followPrinterFan2, printerConfig.printerFanSource2, printerConfig.fanGraph2, temperature);
+        if (printerVariables.postPrint[1].active) speed2 = printerVariables.postPrint[1].speed;
     }
     globalVariables.fanSpeed = speed1;
     globalVariables.fanSpeed2 = speed2;
