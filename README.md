@@ -10,9 +10,9 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 ### BL Smart Flow+ Features
 
 - Synchronized or independent control of both fans
-- Per-fan temperature curve editing
+- Separate graphs for each fan, using nozzle temperature or printer fan percentage
 - Per-fan static speed overrides
-- Per-fan following the reported speed of a printer fan
+- Per-fan printer fan following with adjustable speed mapping and a minimum starting speed
 - Per-fan Post Print timers with a chosen duration and speed
 - Separate animated fan indicators
 
@@ -46,7 +46,7 @@ From the project folder, upload the versioned firmware image to the controller. 
 
 ```bash
 curl --fail --show-error \
-  -F "update=@build/esp32dev/firmware-1.3.13.bin" \
+  -F "update=@build/esp32dev/firmware-1.4.1.bin" \
   "http://CONTROLLER_IP/update"
 ```
 
@@ -64,7 +64,7 @@ Once you have uploaded the firmware to your device, please visit the [dutchdevel
 
 Versions use **major.feature.build**: the first number changes for a major overhaul, the middle number for feature additions, and the last number increments for every firmware build.
 
-`version_build.py` reserves the next build number in `platformio.ini` before compiling, including when Upload builds new firmware. A failed build still consumes its number. Cleaning, IDE metadata, filesystem-only operations, and uploading an existing binary with `nobuild` do not increment it. Commit the updated `custom_version` with the changes being built. When starting a new feature series or major version, update the corresponding number in `custom_version`; the next build increments its final number as usual.
+`version_build.py` reserves the next build number in `platformio.ini` before compiling, including when Upload builds new firmware. A failed build still consumes its number. Cleaning, IDE metadata, filesystem-only operations, and uploading an existing binary with `nobuild` do not increment it. Commit the updated `custom_version` with the changes being built. To start a feature series at an exact release version, run `BLSF_RELEASE_VERSION=1.4.0 pio run -e esp32dev`. This records and builds 1.4.0; subsequent normal builds increment to 1.4.1, 1.4.2, and so on. Use the release override only when intentionally reserving a specific version.
 
 The compiler and `.firmware` output filenames use the same reserved version. The displayed date comes from the build machine's local date. Web pages load the version from the firmware instead of keeping a separate hardcoded copy.
 
@@ -72,17 +72,21 @@ Each build also writes the OTA-ready image to `build/esp32dev/firmware-<version>
 
 #### Independent Fan Control
 
-**Synchronize Fans: On** uses Fan 1's curve and static-speed override for both outputs. This is also the default after upgrading from 1.0.x. Fan 1 is GPIO 17; Fan 2 is GPIO 16. Both curves use the printer's nozzle temperature.
+**Synchronize Fans: On** uses Fan 1's settings and curves for both outputs. This is also the default after upgrading from 1.0.x. Fan 1 is GPIO 17; Fan 2 is GPIO 16.
 
-Set synchronization to **Off** and save to configure the fans separately. Fan 2 initially copies Fan 1's current settings. The Fan Graph page shows both curves; the **Edit curve** switch selects **Fan 1** on the left and **Fan 2** on the right. Clicking a point also selects its fan and opens the editor; overlapping points prefer the currently selected fan. Valid point changes save automatically, with a confirmation that disappears after four seconds. Each fan's static-speed switch overrides its own curve with the entered percentage.
+Set synchronization to **Off** and save to configure the fans separately. Fan 2 initially copies Fan 1's current settings. The Fan Graph page shows a separate graph and point editor for **Fan 1** and **Fan 2**. A fan with Follow Printer Fan enabled uses **Printer fan (%)** as its input; otherwise its graph uses **Nozzle temperature (°C)**. Synchronized mode shows one graph for both fans. Click a point or use **Select point** to open its editor, then press **Change**, **Add point**, or **Remove** to save that change. Confirmation disappears after four seconds. Each fan's static-speed switch overrides its own curve with the entered percentage.
 
-Switching synchronization back On preserves Fan 2's curve and static settings, including across restarts. Switching Off again restores them. Configuration changes take effect after a successful Save; unsaved changes to the synchronization selector do not change the running fan mode.
+Switching synchronization back On preserves Fan 2's settings and both curve types, including across restarts. Switching Off again restores them. Configuration changes take effect after a successful Save; save synchronization and follow-mode changes before editing curves.
 
 The existing HTTP endpoints remain available: `points` and `speed` still describe Fan 1. `/getFanConfig` adds `points2` and `fansSynchronized`; `/sensorData` adds `speed2`. To update a specific curve, POST `fan=1` or `fan=2` to `/updateFanConfig` alongside the existing `points` form field containing `{"points":[{"temp":0,"speed":0},...]}`. Omitting `fan` selects Fan 1.
 
 #### Follow Printer Fan
 
-Below each **Static Fan Speed** row, enable **Follow Printer Fan**, choose a source, and save. The output mirrors that printer fan's reported percentage. The two switches are mutually exclusive, and either can always be switched off. When both are off, the output uses its temperature curve. **Synchronize Fans: On** applies Fan 1's settings to both outputs; switching it Off restores Fan 2's saved settings. The selected source appears in white below the speed indicator after a successful save.
+Below each **Static Fan Speed** row, enable **Follow Printer Fan**, choose a source, and save. By default the output mirrors that printer fan's reported percentage; its mapping curve can translate the reported speed into a different output speed. The two switches are mutually exclusive, and either can always be switched off. When both are off, the output uses its temperature curve. **Synchronize Fans: On** applies Fan 1's settings to both outputs; switching it Off restores Fan 2's saved settings. The selected source appears in white below the speed indicator after a successful save.
+
+On the **Fan Graph** page, edit that fan's percentage curve. For an external exhaust fan that needs 35% to start, select the **1% → 1%** point, change its output to **35%**, and keep the **100% → 100%** point. The result is 0% → 0%, 1% → 35%, 50% → 67%, 70% → 80%, and 100% → 100%.
+
+The 0% point is fixed at 0% so a stopped printer fan always stops the following output unless Static Fan Speed or Post Print is overriding it. Inputs at 1% and 100% stay fixed, with editable output percentages; add intermediate points from 2–99% for other shapes. Inputs and outputs use whole percentages, with linear interpolation rounded to the nearest whole output percentage. Each fan stores its temperature curve and percentage curve separately, so switching modes preserves both. Existing configurations retain their settings and receive a 1:1 percentage curve.
 
 | Source | MQTT field | Indicator label |
 | --- | --- | --- |
@@ -93,9 +97,11 @@ Below each **Static Fan Speed** row, enable **Follow Printer Fan**, choose a sou
 
 The packed `print.fan_gear` field contains three 0–255 values (part, auxiliary, chamber) and takes precedence when present. Those values are rounded to the nearest 10% step to match [Bambu Studio's fan display](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/Widgets/FanControl.cpp). For example, PWM 180 becomes 70%, not 71%. Separate 0–15 fields for these three fans use `floor(raw / 1.5) * 10`, matching [Bambu Studio's decoder](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceCore/DevFan.cpp). Hotend/heatbreak readings use a separate 0–15 scale and are converted to the nearest whole percentage. These are reported speed levels, not RPM measurements; a source is usable only if the printer reports it. Static speeds and curve speeds are not rounded to 10% steps.
 
-Each source starts at **0% after boot** and keeps its last valid speed when MQTT disconnects, a field is omitted, or a value is malformed. An explicitly reported zero stops the following output. Speeds are kept in RAM; only the follow settings are saved to flash. Existing configurations load with following Off.
+Each source starts at **0% after boot** and keeps its last valid speed when MQTT disconnects, a field is omitted, or a value is malformed. An explicitly reported zero stops the following output. Speeds are kept in RAM; the follow settings and mapping curves are saved to flash. Configurations predating the following feature load with following Off.
 
 `/getOptions` and `/submitOptions` add `followPrinterFan` and `printerFanSource` (and `followPrinterFan2` / `printerFanSource2`). Sources are `part`, `auxiliary`, `chamber`, or `heatbreak`. The form posts explicit `on`/`off` values; requests enabling both overrides are rejected. `/sensorData` adds `printerFans`, containing each source's last percentage or `null` before its first report.
+
+`/getFanConfig` also returns `followPoints` and `followPoints2`, with points shaped as `{"input":1,"speed":35}`. To update one, POST `mode=follow`, `fan=1` or `fan=2`, and a `points` form field such as `{"points":[{"input":0,"speed":0},{"input":1,"speed":35},{"input":100,"speed":100}]}` to `/updateFanConfig`. `mode=temperature` (or omitting `mode`) continues to edit the temperature curve using `temp` keys.
 
 #### Post Print
 
@@ -103,7 +109,9 @@ Enable **Post Print** below **Follow Printer Fan**, enter a duration in seconds 
 
 After observing `RUNNING` on the current MQTT connection, the next `FINISH`, `FAILED`, or `IDLE` report starts the timer. Partial updates and intervening `PREPARE` or `PAUSE` reports preserve that observation. Repeated end reports do not restart it. `PREPARE`, `RUNNING`, and `PAUSE` do not cancel or alter an already running countdown.
 
-During the timer, its speed takes priority over the normal mode, and **Post Print: 600s** (with the remaining seconds) replaces the source label beneath the fan percentage. Telemetry refreshes every second. When the timer expires, the fan returns to its current static speed, last reported printer-fan speed, or temperature curve. A reset or detected Wi-Fi/MQTT disconnect clears both timers and the previous running observation; reconnecting to an end state cannot start an old timer. Only settings are stored in flash.
+During the timer, its speed takes priority over the normal mode, and **Post Print: 600s** (with the remaining seconds) replaces the source label beneath the fan percentage. Telemetry refreshes every second. When the timer expires, the fan returns to its current static speed, mapped last reported printer-fan speed, or temperature curve. A reset or detected Wi-Fi/MQTT disconnect clears both timers and the previous running observation; reconnecting to an end state cannot start an old timer. Only settings are stored in flash.
+
+Click or tap the fan image at the top to cancel its current Post Print timer early. The image is also a keyboard-accessible button while a timer is running. Cancellation immediately resumes the normal control mode, which may still request a nonzero speed. Independent fans cancel separately; synchronized fans cancel together. Post Print stays enabled for future prints, and no settings are written to flash. The HTTP equivalent is `POST /cancelPostPrint` with `fan=1` or `fan=2`; the response contains updated sensor data and output speeds.
 
 **Synchronize Fans: On** applies Fan 1's Post Print settings and countdown to both outputs, retaining Fan 2's settings for later. Changing synchronization cancels active timers. Saving a change to a fan's Post Print settings cancels its current timer; failed saves leave it running. Older configurations default Post Print to Off, with editable defaults of 600 seconds and 100%.
 

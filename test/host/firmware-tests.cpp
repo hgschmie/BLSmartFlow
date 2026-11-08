@@ -55,9 +55,10 @@ int options(std::map<std::string,String> params) {
     assert(webServer.responses.size() == 1);
     return webServer.responses[0];
 }
-int curve(const char *json, const char *fan = nullptr) {
+int curve(const char *json, const char *fan = nullptr, const char *mode = nullptr) {
     webServer.params = {{"points", json}};
     if (fan) webServer.params["fan"] = fan;
+    if (mode) webServer.params["mode"] = mode;
     webServer.responses.clear();
     handleUpdateFanConfig();
     assert(webServer.responses.size() == 1);
@@ -89,10 +90,12 @@ template<class T> void check(const char *name, T test) {
 
 #include "mqtt-tests.h"
 #include "post-print-tests.h"
+#include "follow-curve-tests.h"
 
 int main() {
     mqttTests();
     postPrintTests();
+    followCurveTests();
     check("legacy settings leave following disabled", [] {
         putConfig(legacyConfig); reboot();
         assert(!printerConfig.followPrinterFan && !printerConfig.followPrinterFan2);

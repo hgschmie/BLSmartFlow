@@ -38,10 +38,10 @@ class BuildVersionTests(unittest.TestCase):
                          '[env:other]\ncustom_version = 2.0.0\n')
         self.path.write_text(self.original)
 
-    def run_build(self, targets=()):
+    def run_build(self, targets=(), release_version=None):
         env = BuildEnvironment(self.path)
         with contextlib.redirect_stdout(StringIO()):
-            configure_version(env, targets)
+            configure_version(env, targets, release_version)
         return env
 
     def test_consecutive_builds_increment_and_share_version_with_compiler_and_artifacts(self):
@@ -71,6 +71,22 @@ class BuildVersionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.run_build()
         self.assertEqual(self.path.read_text(), invalid)
+
+    def test_release_starts_at_zero_then_normal_builds_increment(self):
+        env = self.run_build(release_version='1.4.0')
+        self.assertEqual(env['FIRMWARE_VERSION'], '1.4.0')
+        self.assertEqual(self.path.read_text(), self.original.replace('1.1.9', '1.4.0'))
+        self.assertEqual(self.run_build()['FIRMWARE_VERSION'], '1.4.1')
+
+    def test_invalid_release_does_not_modify_config(self):
+        for version in ('1.4', '-1.4.0', '1.4.0junk', ''):
+            with self.assertRaises(ValueError):
+                self.run_build(release_version=version)
+            self.assertEqual(self.path.read_text(), self.original)
+
+    def test_clean_does_not_apply_release_version(self):
+        self.assertEqual(self.run_build(['clean'], '1.4.0')['FIRMWARE_VERSION'], '1.1.9')
+        self.assertEqual(self.path.read_text(), self.original)
 
 
 if __name__ == '__main__':

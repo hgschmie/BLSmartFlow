@@ -63,6 +63,8 @@ extern "C"
         FanCurve fanGraph = defaultFanCurve();
         // Empty until independent settings are first saved; then retained in sync mode.
         FanCurve fanGraph2;
+        FanCurve followGraph = defaultFollowFanCurve();
+        FanCurve followGraph2 = defaultFollowFanCurve();
 
     } PrinterConfig;
     PrinterConfig printerConfig;

@@ -212,6 +212,9 @@ void handleGetFanConfig() {
     writeFanCurve(doc["points"].to<JsonArray>(), printerConfig.fanGraph);
     writeFanCurve(doc["points2"].to<JsonArray>(), printerConfig.fanGraph2.empty()
                  ? printerConfig.fanGraph : printerConfig.fanGraph2);
+    writeFanCurve(doc["followPoints"].to<JsonArray>(), printerConfig.followGraph, "input");
+    writeFanCurve(doc["followPoints2"].to<JsonArray>(), printerConfig.fanGraph2.empty()
+                 ? printerConfig.followGraph : printerConfig.followGraph2, "input");
     String response;
     serializeJson(doc, response);
     webServer.send(200, "application/json", response);
@@ -219,28 +222,37 @@ void handleGetFanConfig() {
 
 void handleUpdateFanConfig() {
     const String fan = webServer.hasArg("fan") ? webServer.arg("fan") : String("1");
+    const String mode = webServer.hasArg("mode") ? webServer.arg("mode") : String("temperature");
+    if (mode != "temperature" && mode != "follow") {
+        webServer.send(400, "text/plain", "Choose a temperature or follow curve");
+        return;
+    }
+    const bool following = mode == "follow";
     if ((fan != "1" && fan != "2") || !webServer.hasArg("points")) {
         webServer.send(400, "text/plain", "Supply points and a fan number of 1 or 2");
         return;
     }
     JsonDocument doc;
     FanCurve curve;
-    if (deserializeJson(doc, webServer.arg("points")) || !readFanCurve(doc["points"], curve)) {
-        webServer.send(400, "text/plain", "Use unique temperatures from 0 to 400 and integer speeds from 0 to 100; at least one point is required");
+    if (deserializeJson(doc, webServer.arg("points")) || !readFanCurve(doc["points"], curve, following)) {
+        webServer.send(400, "text/plain", following
+            ? "Use unique whole-number inputs and speeds from 0 to 100, with points at 0, 1 and 100; 0 must map to 0"
+            : "Use unique temperatures from 0 to 400 and integer speeds from 0 to 100; at least one point is required");
         return;
     }
     PrinterConfig candidate = printerConfig;
     if (fan == "2") {
         initializeSecondFan(candidate);
-        candidate.fanGraph2 = std::move(curve);
+        (following ? candidate.followGraph2 : candidate.fanGraph2) = std::move(curve);
     } else {
-        candidate.fanGraph = std::move(curve);
+        (following ? candidate.followGraph : candidate.fanGraph) = std::move(curve);
     }
     if (!saveFileSystem(candidate)) {
         webServer.send(500, "text/plain", "Failed to save fan curve to flash");
         return;
     }
     printerConfig = std::move(candidate);
+    fanloop();
     webServer.send(200, "text/plain", "Fan curve saved");
 }
 
@@ -261,6 +273,21 @@ void handleSensorData() {
     String response;
     serializeJson(doc, response);
     webServer.send(200, "application/json", response);
+}
+
+void handleCancelPostPrint() {
+    if (!isAuthorized()) {
+        webServer.requestAuthentication();
+        return;
+    }
+    const String fan = webServer.arg("fan");
+    if (fan != "1" && fan != "2") {
+        webServer.send(400, "text/plain", "Supply a fan number of 1 or 2");
+        return;
+    }
+    // Cancel only the current run; retain the settings for the next print.
+    cancelPostPrint(fan == "1" ? 0 : 1);
+    handleSensorData(); // Applies normal control immediately and returns fresh speeds.
 }
 
 void setupWebserver(){
@@ -311,6 +338,7 @@ void setupWebserver(){
     webServer.on("/getFanConfig", HTTP_GET, handleGetFanConfig);
     webServer.on("/updateFanConfig", HTTP_POST, handleUpdateFanConfig);
     webServer.on("/sensorData", HTTP_GET, handleSensorData);
+    webServer.on("/cancelPostPrint", HTTP_POST, handleCancelPostPrint);
 
     webServer.begin();
 

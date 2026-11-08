@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.1 — 2026-11-07
+
+- Click or tap a top fan image during Post Print to cancel its current timer and immediately resume its normal static, printer-follow, or temperature-curve control. Synchronized fans cancel together; independent fans cancel separately.
+- Preserved Post Print settings for future jobs, added keyboard-accessible image buttons, and prevented stale telemetry responses from restoring a canceled countdown.
+
+## 1.4.0 — 2026-11-07
+
+- Added a separate percentage mapping curve for each output following a printer fan. Existing configurations default to 1:1 following; temperature curves and follow curves are preserved independently across mode changes and restarts.
+- Added an editable minimum running speed at 1% input, linear interpolation between points, and an immutable 0% → 0% point. For example, 1% → 35% and 100% → 100% lets an external exhaust fan start at 35% and ramp up with the printer fan.
+- Replaced the shared fan chart and Fan 1/Fan 2 selector with separate graphs and point editors. Each graph uses printer fan percentage or nozzle temperature according to its saved mode; synchronized fans share one graph. A point picker makes closely spaced points easy to select on mobile.
+- Added mapping validation, atomic persistence, backward-compatible HTTP updates, and regression coverage for migration, reboot, synchronization, failed saves, rounding, override precedence, and independent graph editing.
+- Added an explicit release-version build option to start this feature series at 1.4.0; subsequent normal builds increment the final digit.
+
 ## 1.3.13 — 2026-11-07
 
 - Fixed the web interface becoming unavailable when the printer is offline at startup or during reconnects. MQTT network operations now run in a background task so HTTP requests and fan control can continue.

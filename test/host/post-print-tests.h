@@ -12,7 +12,55 @@ void finishPrint(const char *end = "FINISH") {
     printState(end);
 }
 
+int cancelRun(const char *fan) {
+    webServer.params.clear();
+    if (fan) webServer.params["fan"] = fan;
+    webServer.responses.clear();
+    handleCancelPostPrint();
+    assert(webServer.responses.size() == 1);
+    return webServer.responses[0];
+}
+
 void postPrintTests() {
+    check("canceling one Post Print run immediately resumes its normal output and preserves the other fan", [] {
+        assert(options({{"fansSynchronized","off"},{"postPrint","on"},{"postPrint2","on"},
+            {"staticfan","on"},{"staticfanspeed","23"},{"followPrinterFan2","on"}}) == 200);
+        report(R"({"print":{"big_fan2_speed":6}})");
+        finishPrint(); assertPWM(200,100,100);
+        const auto disk = savedConfig();
+        failOpen = true; // Canceling requires no flash write.
+        assert(cancelRun("1") == 200);
+        auto json = response();
+        assert(json["speed"] == 23 && json["speed2"] == 100);
+        assert(json["postPrintRemaining"] == 0 && json["postPrintRemaining2"] == 600);
+        assert(savedConfig() == disk && printerConfig.postPrint.enabled);
+        assert(cancelRun("1") == 200); // Already canceled is harmless.
+        assertPWM(200,23,100);
+        assert(cancelRun("2") == 200); assertPWM(200,23,40);
+        printState("FINISH"); printState("IDLE"); assertPWM(200,23,40);
+        finishPrint(); assertPWM(200,100,100); // Next job still triggers both.
+    });
+    check("canceling a synchronized Post Print run resumes the curve for both outputs", [] {
+        assert(options({{"postPrint","on"}}) == 200);
+        const auto disk = savedConfig();
+        for (const char *fan : {"1", "2"}) {
+            finishPrint(); assertPWM(0,100,100);
+            assert(cancelRun(fan) == 200); assertPWM(0,0,0);
+            auto json = response();
+            assert(json["postPrintRemaining"] == 0 && json["postPrintRemaining2"] == 0);
+            assert(savedConfig() == disk && printerConfig.postPrint.enabled);
+        }
+        reboot(); assert(printerConfig.postPrint.enabled); assertPWM(0,0,0);
+    });
+    check("invalid cancellation requests leave timers and settings untouched", [] {
+        assert(options({{"fansSynchronized","off"},{"postPrint","on"},{"postPrint2","on"}}) == 200);
+        finishPrint();
+        const auto disk = savedConfig();
+        assert(cancelRun(nullptr) == 400);
+        for (const char *fan : {"", "0", "3", "-1", "1.0", "1x"}) assert(cancelRun(fan) == 400);
+        assert(postPrintSecondsRemaining(0,millis()) == 600 && postPrintSecondsRemaining(1,millis()) == 600);
+        assert(savedConfig() == disk);
+    });
     check("Post Print defaults off for old configurations and does not start from an end report alone", [] {
         putConfig(legacyConfig); reboot();
         assert(!printerConfig.postPrint.enabled && !printerConfig.postPrint2.enabled);

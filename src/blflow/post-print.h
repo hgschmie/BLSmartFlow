@@ -59,6 +59,12 @@ inline uint32_t postPrintSecondsRemaining(int fan, uint32_t now) {
     return (run.durationMs - static_cast<uint32_t>(now - run.started) + 999) / 1000;
 }
 
+inline void cancelPostPrint(int fan) {
+    if (fan < 0 || fan > 1) return;
+    printerVariables.postPrint[printerConfig.fansSynchronized ? 0 : fan] = PostPrintRun{};
+    if (printerConfig.fansSynchronized) printerVariables.postPrint[1] = PostPrintRun{};
+}
+
 inline bool samePostPrintSettings(const PostPrintSettings &a, const PostPrintSettings &b) {
     return a.enabled == b.enabled && a.seconds == b.seconds && a.speed == b.speed;
 }

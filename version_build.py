@@ -1,10 +1,11 @@
 """Reserve a new major.feature.build version for each firmware build."""
 from datetime import date
 from pathlib import Path
+import os
 import re
 
 
-def configure_version(env, targets):
+def configure_version(env, targets, release_version=None):
     config_path = Path(env.subst("$PROJECT_CONFIG"))
     config = config_path.read_text()
     section = re.search(
@@ -22,7 +23,12 @@ def configure_version(env, targets):
         "buildfs", "uploadfs", "uploadfsota", "erase", "compiledb", "sizedata",
     }
     if not env.IsCleanTarget() and not env.IsIntegrationDump() and not (set(targets) & non_firmware_targets):
-        build += 1
+        if release_version is not None:
+            if not re.fullmatch(r"\d+\.\d+\.\d+", release_version):
+                raise ValueError("BLSF_RELEASE_VERSION must use major.feature.build format")
+            major, feature, build = map(int, release_version.split('.'))
+        else:
+            build += 1
         start, end = section.start() + match.start(2), section.start() + match.end(4)
         config_path.write_text(config[:start] + f"{major}.{feature}.{build}" + config[end:])
 
@@ -39,4 +45,4 @@ def configure_version(env, targets):
 if "Import" in globals():
     Import("env")
     from SCons.Script import COMMAND_LINE_TARGETS
-    configure_version(env, COMMAND_LINE_TARGETS)
+    configure_version(env, COMMAND_LINE_TARGETS, os.environ.get("BLSF_RELEASE_VERSION"))

@@ -71,6 +71,9 @@
       height: 80px;
       margin-right: 20px;
       overflow: hidden;
+      padding: 0;
+      border: 0;
+      background: transparent;
     }
 
     .fan-stack img {
@@ -130,7 +133,7 @@
       .fan-option-row { grid-template-columns: 60px minmax(0, 1fr); }
       .fan-parameters { grid-column: 1 / -1; max-width: 100%; }
     }
-    #settings-status, #curve-status, #mode-status { margin: .6rem 0; font-size: .9rem; }
+    #settings-status, #curve-status, #mode-status, .curve-status { margin: .6rem 0; font-size: .9rem; }
     #save-notice {
       position: fixed;
       top: 1.5rem;
@@ -146,6 +149,14 @@
       pointer-events: none;
     }
     button:disabled, input:disabled { cursor: default; opacity: .55; }
+    .fan-stack:disabled { opacity: 1; }
+    .fan-stack:not(:disabled) { cursor: pointer; }
+    .fan-stack:not(:disabled):hover, .fan-stack:focus-visible { outline: 2px solid white; outline-offset: 4px; border-radius: 4px; }
+    #fan-action-status { margin: 0 0 1rem; text-align: center; }
+    #fan-action-status:empty { display: none; }
+    .graph-status { width: 100%; max-width: var(--panel-max-width); }
+    .graph-description { margin: .75rem 0 1rem; max-width: 500px; font-size: .9rem; line-height: 1.5; }
+    #fanGraphTab { gap: 1.25rem; }
     .telemetry { margin-top: 1rem; }
     .fangraph-container { width: 100%; }
     @media (max-width: 400px) {
@@ -257,9 +268,11 @@
     }
     .controls label {
       display: inline-block;
-      width: 150px;
+      width: 190px;
+      max-width: 100%;
       margin-bottom: 0.5em;
     }
+    .controls select { max-width: 100%; padding: .25rem; }
     .controls input[type="number"] {
       width: 100px;
       margin-right: 10px;
@@ -370,23 +383,24 @@
     <div class='logo-container'>
 
       <div id="fan1Indicator" class="fan-indicator">
-        <div class="fan-stack">
+        <button id="fanButton1" type="button" class="fan-stack" aria-label="Fan 1" disabled>
           <img class="fanshell" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_shell.png" alt="Fan 1 shell">
           <img id="blades1" class="fanblades" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_blades.png" alt="">
-        </div>
+        </button>
         <span class="fan-label"><span id="fan1Label">Both fans</span>: <span id="fan1Percent">-</span>%</span>
         <span id="fan1Source" class="fan-label fan-source"></span>
       </div>
       <div id="fan2Indicator" class="fan-indicator" hidden>
-        <div class="fan-stack">
+        <button id="fanButton2" type="button" class="fan-stack" aria-label="Fan 2" disabled>
           <img class="fanshell" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_shell.png" alt="Fan 2 shell">
           <img id="blades2" class="fanblades" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_blades.png" alt="">
-        </div>
+        </button>
         <span class="fan-label"><span class="fan-two">Fan 2</span>: <span id="fan2Percent">-</span>%</span>
         <span id="fan2Source" class="fan-label fan-source"></span>
       </div>
       <span class='logo-text'>BL Smart Flow+</span>
     </div>
+    <p id="fan-action-status" role="alert"></p>
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="toggleTab">Settings</button>
@@ -394,63 +408,73 @@
     </div>
 
     <div id="fanGraphTab" class="tab-content">
-      <div class='fangraph-container'>
+      <div class="graph-status">
+        <p id="mode-status" role="status"></p>
+        <p id="curve-status" role="status">Loading fan curves...</p>
+        <button id="retryCurves" hidden>Retry loading curves</button>
+      </div>
+      <section id="graphPanel1" class="fangraph-container" aria-labelledby="graphTitle1">
+        <h2 id="graphTitle1">Fan 1</h2>
+        <p id="graphDescription1" class="graph-description"></p>
         <div class="chart-container">
-          <canvas id="myChart"></canvas>
+          <canvas id="myChart1" role="img" aria-label="Fan 1 curve"></canvas>
         </div>
         <div class="controls">
           <h2>Manage Data Points</h2>
-          <p id="mode-status" role="status"></p>
-          <p id="curve-status" role="status">Loading fan curves...</p>
-          <button id="retryCurves" hidden>Retry loading curves</button>
-          <div id="fanSelectorRow" hidden>
-            <label for="selectedFan">Edit curve:</label>
-            <div class="switch-with-label labeled-switch">
-              <span class="toggle-label" aria-hidden="true">Fan 1</span>
-              <label class="switch">
-                <input type="checkbox" id="selectedFan" role="switch" aria-label="Edit Fan 2 curve" disabled>
-                <span class="slider round"></span>
-              </label>
-              <span class="toggle-label" aria-hidden="true">Fan 2</span>
-            </div>
-          </div>
+          <p id="curve-status1" class="curve-status" role="status"></p>
+          <label for="pointSelect1">Select point:</label>
+          <select id="pointSelect1" aria-label="Fan 1 curve point" disabled><option value="">Choose a point…</option></select>
           <div class="section">
-            <button id="createPointBtn" disabled>Create New Point</button>
+            <button id="createPointBtn1" disabled>Create New Point</button>
           </div>
-          <div class="section" id="editSection" style="display:none;">
-            <h3 id="pointHeading">Selected Point</h3>
-            <label for="edit-temp">Temperature (°C):</label>
-            <input
-              id="edit-temp"
-              type="number"
-              min="0"
-              max="400"
-              step="any"
-              placeholder="e.g. 75"
-            >
+          <div class="section" id="editSection1" style="display:none;">
+            <h3 id="pointHeading1">Selected Point</h3>
+            <label id="inputLabel1" for="edit-input1">Nozzle temperature (°C):</label>
+            <input id="edit-input1" type="number" min="0" max="400" step="any">
             <br/>
-            <label for="edit-speed">Fan Speed (%):</label>
-            <input
-              id="edit-speed"
-              type="number"
-              min="0"
-              max="100"
-              step="1"
-              placeholder="e.g. 40"
-            >
+            <label for="edit-speed1">Fan speed (%):</label>
+            <input id="edit-speed1" type="number" min="0" max="100" step="1">
             <br/>
-            <button id="editPointBtn">Change</button>
-            <button id="removePointBtn" style="background: var(--color-error);">
-              Remove
-            </button>
+            <button id="editPointBtn1">Change</button>
+            <button id="removePointBtn1" style="background: var(--color-error);">Remove</button>
           </div>
         </div>
         <div class="section telemetry">
-          <div>Nozzle Temperature: <span id="tempValue">-</span> °C</div>
-          <div><span id="speedLabel">Both fans</span>: <span id="speedValue">-</span> %</div>
-          <div id="speed2Row" hidden>Fan 2: <span id="speedValue2">-</span> %</div>
+          <div id="sensorInput1">Nozzle temperature: —</div>
+          <div>Output: <span id="speedValue1">—</span> %</div>
         </div>
-      </div><!-- .form-container -->
+      </section>
+      <section id="graphPanel2" class="fangraph-container" aria-labelledby="graphTitle2" hidden>
+        <h2 id="graphTitle2">Fan 2</h2>
+        <p id="graphDescription2" class="graph-description"></p>
+        <div class="chart-container">
+          <canvas id="myChart2" role="img" aria-label="Fan 2 curve"></canvas>
+        </div>
+        <div class="controls">
+          <h2>Manage Data Points</h2>
+          <p id="curve-status2" class="curve-status" role="status"></p>
+          <label for="pointSelect2">Select point:</label>
+          <select id="pointSelect2" aria-label="Fan 2 curve point" disabled><option value="">Choose a point…</option></select>
+          <div class="section">
+            <button id="createPointBtn2" disabled>Create New Point</button>
+          </div>
+          <div class="section" id="editSection2" style="display:none;">
+            <h3 id="pointHeading2">Selected Point</h3>
+            <label id="inputLabel2" for="edit-input2">Nozzle temperature (°C):</label>
+            <input id="edit-input2" type="number" min="0" max="400" step="any">
+            <br/>
+            <label for="edit-speed2">Fan speed (%):</label>
+            <input id="edit-speed2" type="number" min="0" max="100" step="1">
+            <br/>
+            <button id="editPointBtn2">Change</button>
+            <button id="removePointBtn2" style="background: var(--color-error);">Remove</button>
+          </div>
+        </div>
+        <div class="section telemetry">
+          <div id="sensorInput2">Nozzle temperature: —</div>
+          <div>Output: <span id="speedValue2">—</span> %</div>
+        </div>
+      </section>
     </div>
 
     <div id="toggleTab" class="tab-content active">
@@ -609,14 +633,15 @@
     let activeFollowSources = [null, null];
     let postPrintRemaining = [0, 0];
     let sensorRequestActive = false;
+    let sensorGeneration = 0;
+    let cancelingPostPrint = false;
     let curves = [[], []];
+    let followCurves = [[], []];
+    let lastSensor = null;
     let curvesLoaded = false;
     let curveSaving = false;
     let curveRequest = 0;
-    let selectedFan = 0;
-    let selectedIndex = null;
-    let creatingPoint = false;
-    let myChart = null;
+    const editors = Array.from({ length: 2 }, () => ({ chart: null, selectedIndex: null, creatingPoint: false }));
     let saveNoticeTimer;
 
     function hideSaveNotice() {
@@ -632,12 +657,28 @@
       saveNoticeTimer = setTimeout(hideSaveNotice, 4000);
     }
 
+    const field = (name, fan) => $(name + (fan + 1));
+    const following = fan => activeFollowSources[fan] !== null;
+    const inputKey = fan => following(fan) ? 'input' : 'temp';
+    const activeCurve = fan => (following(fan) ? followCurves : curves)[fan];
+    const fanTitle = fan => fansSynchronized ? 'Both fans' : 'Fan ' + (fan + 1);
+
     function pendingModeChange() {
-      return $('fansSynchronized').checked !== fansSynchronized;
+      return $('fansSynchronized').checked !== fansSynchronized ||
+        activeFollowSources.slice(0, fansSynchronized ? 1 : 2).some((source, fan) => {
+          const suffix = fan === 0 ? '' : '2';
+          return source !== ($('followPrinterFan' + suffix).checked ? $('printerFanSource' + suffix).value : null);
+        });
     }
 
-    function canEditCurve() {
-      return optionsLoaded && curvesLoaded && myChart && !optionsSaving && !curveSaving && !pendingModeChange();
+    function canEditCurve(fan = 0) {
+      return optionsLoaded && curvesLoaded && editors[fan].chart && !(fansSynchronized && fan === 1) &&
+        !optionsSaving && !curveSaving && !cancelingPostPrint && !pendingModeChange();
+    }
+
+    function selectedAnchor(fan) {
+      const point = activeCurve(fan)[editors[fan].selectedIndex];
+      return Boolean(following(fan) && point && [0, 1, 100].includes(point.input));
     }
 
     function renderFeatureSections() {
@@ -655,25 +696,32 @@
     }
 
     function updateControls() {
-      $('settings-fields').disabled = !optionsLoaded || optionsSaving;
-      $('saveOptions').disabled = !optionsLoaded || optionsSaving || curveSaving;
+      $('settings-fields').disabled = !optionsLoaded || optionsSaving || cancelingPostPrint;
+      $('saveOptions').disabled = !optionsLoaded || optionsSaving || curveSaving || cancelingPostPrint;
       renderFeatureSections();
-      const editable = Boolean(canEditCurve());
-      $('selectedFan').disabled = !editable;
-      $('createPointBtn').disabled = !editable;
-      $('editPointBtn').disabled = !editable;
-      $('edit-temp').disabled = !editable;
-      $('edit-speed').disabled = !editable;
-      $('removePointBtn').disabled = !editable || creatingPoint || selectedIndex === null || curves[selectedFan].length <= 1;
-      $('retryCurves').disabled = !optionsLoaded || optionsSaving || curveSaving;
+      renderFanSources();
+      for (let fan = 0; fan < 2; ++fan) {
+        const editable = Boolean(canEditCurve(fan));
+        const editor = editors[fan];
+        const anchor = selectedAnchor(fan);
+        const offPoint = anchor && activeCurve(fan)[editor.selectedIndex].input === 0;
+        field('createPointBtn', fan).disabled = !editable;
+        field('pointSelect', fan).disabled = !editable;
+        field('editPointBtn', fan).disabled = !editable || offPoint;
+        field('edit-input', fan).disabled = !editable || anchor;
+        field('edit-speed', fan).disabled = !editable || offPoint;
+        field('removePointBtn', fan).disabled = !editable || anchor || editor.creatingPoint ||
+          editor.selectedIndex === null || activeCurve(fan).length <= 1;
+      }
+      $('retryCurves').disabled = !optionsLoaded || optionsSaving || curveSaving || cancelingPostPrint;
       $('mode-status').textContent = optionsLoaded && pendingModeChange()
-        ? 'Save Settings to apply the synchronization change before editing curves.' : '';
+        ? 'Save Settings to apply the fan mode change before editing curves.' : '';
     }
 
-    function clearPointSelection() {
-      selectedIndex = null;
-      creatingPoint = false;
-      $('editSection').style.display = 'none';
+    function clearPointSelection(fan) {
+      editors[fan].selectedIndex = null;
+      editors[fan].creatingPoint = false;
+      field('editSection', fan).style.display = 'none';
     }
 
     function renderFanSources() {
@@ -682,6 +730,10 @@
         const remaining = postPrintRemaining[index];
         $('fan' + (fan + 1) + 'Source').textContent = remaining > 0
           ? 'Post Print: ' + remaining + 's' : (printerFanLabels[activeFollowSources[index]] || '');
+        const button = field('fanButton', fan);
+        button.disabled = remaining <= 0 || !optionsLoaded || optionsSaving || curveSaving || cancelingPostPrint;
+        button.ariaLabel = remaining > 0 ? 'Cancel Post Print for ' + fanTitle(fan) : fanTitle(fan);
+        button.title = remaining > 0 ? button.ariaLabel + ' and resume normal control' : '';
       }
     }
 
@@ -689,15 +741,20 @@
       $('fan2Indicator').hidden = fansSynchronized;
       $('fan1Label').textContent = fansSynchronized ? 'Both fans' : 'Fan 1';
       $('fan1Label').className = fansSynchronized ? '' : 'fan-one';
-      $('speedLabel').textContent = fansSynchronized ? 'Both fans' : 'Fan 1';
-      $('speed2Row').hidden = fansSynchronized;
-      $('fanSelectorRow').hidden = fansSynchronized;
+      $('graphPanel2').hidden = fansSynchronized;
       renderFanSources();
-      if (fansSynchronized) {
-        selectedFan = 0;
+      for (let fan = 0; fan < 2; ++fan) {
+        field('graphTitle', fan).textContent = fanTitle(fan);
+        field('graphDescription', fan).textContent = following(fan)
+          ? printerFanLabels[activeFollowSources[fan]] + ' → output. 0% always stops the fan. Set the 1% point to the minimum running speed.'
+          : 'Set the output speed for each nozzle temperature.';
+        field('inputLabel', fan).textContent = following(fan) ? 'Printer fan (%):' : 'Nozzle temperature (°C):';
+        field('edit-input', fan).max = following(fan) ? 100 : 400;
+        field('edit-input', fan).step = following(fan) ? 1 : 'any';
+        clearPointSelection(fan);
+        field('curve-status', fan).textContent = '';
       }
-      $('selectedFan').checked = selectedFan === 1;
-      clearPointSelection();
+      renderTelemetry();
       updateChart();
       updateControls();
     }
@@ -770,7 +827,7 @@
 
     function submitOptions(event) {
       event.preventDefault();
-      if (!optionsLoaded || optionsSaving || curveSaving || !$('settings-form').reportValidity()) return false;
+      if (!optionsLoaded || optionsSaving || curveSaving || cancelingPostPrint || !$('settings-form').reportValidity()) return false;
       const parameters = new URLSearchParams(new FormData($('settings-form')));
       parameters.set('fansSynchronized', $('fansSynchronized').checked ? 'on' : 'off');
       parameters.set('staticfan', $('staticfan').checked ? 'on' : 'off');
@@ -814,23 +871,30 @@
       return false;
     }
 
-    function validatedCurve(points) {
+    function validatedCurve(points, follow = false) {
       if (!Array.isArray(points) || points.length === 0) throw new Error('At least one point is required.');
+      const key = follow ? 'input' : 'temp';
       const sorted = points.map(point => {
-        if (!point || typeof point.temp !== 'number' || !Number.isFinite(point.temp) || point.temp < 0 || point.temp > 400 ||
+        if (!point || typeof point[key] !== 'number' || !Number.isFinite(point[key]) || point[key] < 0 ||
+            point[key] > (follow ? 100 : 400) || (follow && !Number.isInteger(point[key])) ||
             !Number.isInteger(point.speed) || point.speed < 0 || point.speed > 100) {
-          throw new Error('Use temperatures from 0 to 400 and whole-number speeds from 0 to 100.');
+          throw new Error(follow ? 'Use whole-number inputs and speeds from 0 to 100.'
+            : 'Use temperatures from 0 to 400 and whole-number speeds from 0 to 100.');
         }
-        return { temp: point.temp, speed: point.speed };
-      }).sort((a, b) => a.temp - b.temp);
-      if (sorted.some((point, i) => i > 0 && point.temp === sorted[i - 1].temp)) throw new Error('Each temperature must be unique.');
+        return { [key]: point[key], speed: point.speed };
+      }).sort((a, b) => a[key] - b[key]);
+      if (sorted.some((point, i) => i > 0 && point[key] === sorted[i - 1][key])) throw new Error('Each input must be unique.');
+      if (follow && (sorted.length < 3 || sorted[0].input !== 0 || sorted[0].speed !== 0 ||
+          sorted[1].input !== 1 || sorted[sorted.length - 1].input !== 100)) {
+        throw new Error('Keep points at 0%, 1% and 100%. The 0% point must stay at 0%.');
+      }
       return sorted;
     }
 
     async function fetchFanConfig() {
       const request = ++curveRequest;
       curvesLoaded = false;
-      clearPointSelection();
+      editors.forEach((editor, fan) => clearPointSelection(fan));
       $('curve-status').textContent = 'Loading fan curves...';
       $('retryCurves').hidden = true;
       updateControls();
@@ -840,10 +904,14 @@
         const config = await response.json();
         const loaded = [validatedCurve(config.points), validatedCurve(config.points2 || config.points)];
         if (request !== curveRequest) return;
+        const identity = [{ input: 0, speed: 0 }, { input: 1, speed: 1 }, { input: 100, speed: 100 }];
+        const loadedFollow = [validatedCurve(config.followPoints ?? identity, true),
+          validatedCurve(config.followPoints2 ?? config.followPoints ?? identity, true)];
         curves = loaded;
+        followCurves = loadedFollow;
         fansSynchronized = config.fansSynchronized !== false;
         curvesLoaded = true;
-        $('curve-status').textContent = myChart ? '' : 'Loading chart...';
+        $('curve-status').textContent = editors[0].chart ? '' : 'Chart could not load. Check your connection and reload this page.';
         renderOperatingMode();
       } catch (error) {
         if (request !== curveRequest) return;
@@ -854,86 +922,111 @@
     }
 
     function updateChart() {
-      if (!myChart) return;
       const colors = ['#1565c0', '#b85600'];
-      myChart.data.datasets = curves.slice(0, fansSynchronized ? 1 : 2).map((points, fan) => ({
-        label: fansSynchronized ? 'Both fans' : 'Fan ' + (fan + 1),
-        data: points.map(point => ({ x: point.temp, y: point.speed })),
-        borderColor: colors[fan],
-        borderDash: fan === 1 ? [7, 4] : [],
-        borderWidth: selectedFan === fan ? 3 : 2,
-        pointBackgroundColor: points.map((point, i) => selectedFan === fan && selectedIndex === i ? '#b00020' : colors[fan]),
-        pointRadius: points.map((point, i) => selectedFan === fan && selectedIndex === i ? 8 : 5),
-        fill: false
-      }));
-      myChart.update();
+      editors.forEach((editor, fan) => {
+        if (!editor.chart) return;
+        const points = activeCurve(fan);
+        field('pointSelect', fan).innerHTML = '<option value="">Choose a point…</option>' + points.map((point, i) =>
+          '<option value="' + i + '">' + point[inputKey(fan)] + (following(fan) ? '%' : '°C') + ' → ' + point.speed + '%</option>').join('');
+        field('pointSelect', fan).value = editor.selectedIndex === null ? '' : String(editor.selectedIndex);
+        editor.chart.options.scales.x.max = following(fan) ? 100 : 400;
+        editor.chart.options.scales.x.title.text = following(fan) ? 'Printer fan (%)' : 'Nozzle temperature (°C)';
+        editor.chart.data.datasets = [{
+          label: fanTitle(fan),
+          data: points.map(point => ({ x: point[inputKey(fan)], y: point.speed })),
+          borderColor: colors[fan], borderWidth: 2,
+          pointBackgroundColor: points.map((point, i) => editor.selectedIndex === i ? '#b00020' : colors[fan]),
+          pointRadius: points.map((point, i) => editor.selectedIndex === i ? 8 : 5),
+          fill: false
+        }];
+        editor.chart.update();
+      });
     }
 
     function initChart() {
-      if (myChart) return;
+      if (editors[0].chart) return;
       if (typeof Chart === 'undefined') {
         $('curve-status').textContent = 'Chart could not load. Check your connection and reload this page.';
         return;
       }
-      myChart = new Chart($('myChart'), {
-        type: 'line', data: { datasets: [] },
-        options: {
-          responsive: true,
-          scales: {
-            x: { type: 'linear', min: 0, max: 400, title: { display: true, text: 'Nozzle temperature (°C)' } },
-            y: { min: 0, max: 100, title: { display: true, text: 'Fan speed (%)' } }
-          },
-          onClick: (event, elements) => {
-            if (!canEditCurve()) return;
-            const point = elements.find(element => element.datasetIndex === selectedFan) || elements[0];
-            if (!point) return;
-            selectedFan = point.datasetIndex;
-            $('selectedFan').checked = selectedFan === 1;
-            selectedIndex = point.index;
-            creatingPoint = false;
-            $('pointHeading').textContent = 'Selected point — Fan ' + (selectedFan + 1);
-            $('editPointBtn').textContent = 'Change';
-            $('edit-temp').value = curves[selectedFan][selectedIndex].temp;
-            $('edit-speed').value = curves[selectedFan][selectedIndex].speed;
-            $('editSection').style.display = 'block';
-            updateChart();
-            updateControls();
-          },
-          plugins: { legend: { onClick: () => {} } }
-        }
+      editors.forEach((editor, fan) => {
+        editor.chart = new Chart(field('myChart', fan), {
+          type: 'line', data: { datasets: [] },
+          options: {
+            responsive: true,
+            scales: {
+              x: { type: 'linear', min: 0, max: 400, title: { display: true, text: 'Nozzle temperature (°C)' } },
+              y: { min: 0, max: 100, title: { display: true, text: 'Fan speed (%)' } }
+            },
+            onClick: (event, elements) => {
+              if (!canEditCurve(fan) || !elements.length) return;
+              selectPoint(fan, elements[0].index);
+            },
+            plugins: { legend: { display: false } }
+          }
+        });
       });
       if (curvesLoaded) $('curve-status').textContent = '';
       updateChart();
       updateControls();
     }
 
-    async function saveCurve(points) {
-      if (!canEditCurve()) return;
+    function selectPoint(fan, index) {
+      if (!canEditCurve(fan)) return;
+      const point = activeCurve(fan)[index];
+      if (!point) return;
+      editors[fan].selectedIndex = index;
+      editors[fan].creatingPoint = false;
+      field('pointHeading', fan).textContent = 'Selected point — ' + fanTitle(fan);
+      field('editPointBtn', fan).textContent = 'Change';
+      field('edit-input', fan).value = point[inputKey(fan)];
+      field('edit-speed', fan).value = point.speed;
+      field('editSection', fan).style.display = 'block';
+      updateChart();
+      updateControls();
+    }
+
+    async function saveCurve(points, fan = 0) {
+      if (!canEditCurve(fan)) return;
+      const follow = following(fan);
+      const status = field('curve-status', fan);
       let candidate;
-      try { candidate = validatedCurve(points); }
-      catch (error) { $('curve-status').textContent = error.message; return; }
-      const fan = selectedFan;
+      try { candidate = validatedCurve(points, follow); }
+      catch (error) { status.textContent = error.message; return; }
       curveSaving = true;
       hideSaveNotice();
-      $('curve-status').textContent = 'Saving Fan ' + (fan + 1) + ' curve...';
+      status.textContent = 'Saving ' + fanTitle(fan) + ' curve...';
       updateControls();
       try {
-        const body = new URLSearchParams({ fan: String(fan + 1), points: JSON.stringify({ points: candidate }) });
+        const body = new URLSearchParams({ fan: String(fan + 1), mode: follow ? 'follow' : 'temperature',
+          points: JSON.stringify({ points: candidate }) });
         const response = await fetch('/updateFanConfig', {
           method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString()
         });
         if (!response.ok) throw new Error(await response.text() || 'Unable to save curve.');
-        curves[fan] = candidate;
-        clearPointSelection();
+        (follow ? followCurves : curves)[fan] = candidate;
+        clearPointSelection(fan);
         updateChart();
-        $('curve-status').textContent = '';
-        showSaveNotice('Fan ' + (fan + 1) + ' curve saved.');
+        status.textContent = '';
+        showSaveNotice(fanTitle(fan) + ' curve saved.');
         fetchSensorData();
       } catch (error) {
-        $('curve-status').textContent = error.message + ' The displayed saved curve has not changed.';
+        status.textContent = error.message + ' The displayed saved curve has not changed.';
       } finally {
         curveSaving = false;
         updateControls();
+      }
+    }
+
+    function renderTelemetry() {
+      if (!lastSensor) return;
+      for (let fan = 0; fan < 2; ++fan) {
+        const source = activeFollowSources[fan];
+        const input = source ? lastSensor.printerFans?.[source] : lastSensor.temp;
+        field('sensorInput', fan).textContent = source
+          ? printerFanLabels[source] + ': ' + (input == null ? 'Not reported' : input + ' %')
+          : 'Nozzle temperature: ' + (input ?? '—') + ' °C';
+        field('speedValue', fan).textContent = fan === 0 ? lastSensor.speed : (lastSensor.speed2 ?? lastSensor.speed);
       }
     }
 
@@ -942,26 +1035,61 @@
       $('blades' + fan).style.animation = percent === 0 ? 'none' : `spin ${.5 + (1 - percent / 100) * 4.5}s linear infinite`;
     }
 
+    function applySensorData(sensor) {
+      const speed2 = sensor.speed2 === undefined ? sensor.speed : sensor.speed2;
+      lastSensor = sensor;
+      renderTelemetry();
+      $('fan1Percent').textContent = sensor.speed;
+      $('fan2Percent').textContent = speed2;
+      setSpin(1, sensor.speed);
+      setSpin(2, speed2);
+      postPrintRemaining = [sensor.postPrintRemaining || 0, sensor.postPrintRemaining2 || 0];
+      renderFanSources();
+    }
+
+    async function cancelPostPrint(fan) {
+      if (field('fanButton', fan).disabled) return;
+      const target = fansSynchronized ? 0 : fan;
+      cancelingPostPrint = true;
+      ++sensorGeneration; // Discard polls started before this cancellation.
+      hideSaveNotice();
+      $('fan-action-status').textContent = '';
+      updateControls();
+      try {
+        const response = await fetch('/cancelPostPrint', {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ fan: String(target + 1) }).toString()
+        });
+        if (!response.ok) throw new Error(await response.text() || 'Request failed.');
+        applySensorData(await response.json());
+        showSaveNotice('Post Print canceled for ' + fanTitle(target) + '.');
+      } catch (error) {
+        $('fan-action-status').textContent = 'Unable to confirm Post Print cancellation. ' + error.message;
+      } finally {
+        cancelingPostPrint = false;
+        updateControls();
+      }
+    }
+
     async function fetchSensorData() {
-      if (sensorRequestActive) return;
+      if (sensorRequestActive || cancelingPostPrint) return;
       sensorRequestActive = true;
+      const generation = sensorGeneration;
       try {
         const response = await fetch('/sensorData');
         if (!response.ok) throw new Error('Sensor request failed');
         const sensor = await response.json();
-        const speed2 = sensor.speed2 === undefined ? sensor.speed : sensor.speed2;
-        $('tempValue').textContent = sensor.temp;
-        $('speedValue').textContent = $('fan1Percent').textContent = sensor.speed;
-        $('speedValue2').textContent = $('fan2Percent').textContent = speed2;
-        setSpin(1, sensor.speed);
-        setSpin(2, speed2);
-        postPrintRemaining = [sensor.postPrintRemaining || 0, sensor.postPrintRemaining2 || 0];
-        renderFanSources();
+        if (generation === sensorGeneration) applySensorData(sensor);
       } catch (error) {
+        if (generation !== sensorGeneration) return;
         postPrintRemaining = [0, 0];
         renderFanSources();
         console.error('Unable to refresh fan speeds:', error);
       } finally { sensorRequestActive = false; }
+    }
+
+    for (let fan = 0; fan < 2; ++fan) {
+      field('fanButton', fan).addEventListener('click', () => cancelPostPrint(fan));
     }
 
     $('fansSynchronized').addEventListener('change', () => {
@@ -980,6 +1108,7 @@
     $('settings-form').addEventListener('input', markSettingsChanged);
     for (const suffix of ['', '2']) {
       $('postPrint' + suffix).addEventListener('change', markSettingsChanged);
+      $('printerFanSource' + suffix).addEventListener('change', markSettingsChanged);
       for (const [name, other] of [['staticfan', 'followPrinterFan'], ['followPrinterFan', 'staticfan']]) {
         $(name + suffix).addEventListener('change', () => {
           if ($(name + suffix).checked) $(other + suffix).checked = false;
@@ -987,38 +1116,40 @@
         });
       }
     }
-    $('selectedFan').addEventListener('change', () => {
-      selectedFan = fansSynchronized ? 0 : Number($('selectedFan').checked);
-      clearPointSelection();
-      updateChart();
-      updateControls();
-    });
-    $('createPointBtn').addEventListener('click', () => {
-      if (!canEditCurve()) return;
-      selectedIndex = null;
-      creatingPoint = true;
-      $('pointHeading').textContent = 'New point — Fan ' + (selectedFan + 1);
-      $('editPointBtn').textContent = 'Add point';
-      $('edit-temp').value = '';
-      $('edit-speed').value = 50;
-      $('editSection').style.display = 'block';
-      updateChart();
-      updateControls();
-    });
-    $('editPointBtn').addEventListener('click', () => {
-      if (!canEditCurve() || (!creatingPoint && selectedIndex === null)) return;
-      const point = { temp: Number($('edit-temp').value), speed: Number($('edit-speed').value) };
-      if ($('edit-temp').value === '' || $('edit-speed').value === '') {
-        $('curve-status').textContent = 'Enter a temperature and speed.'; return;
-      }
-      const points = curves[selectedFan].map(point => ({ ...point }));
-      if (creatingPoint) points.push(point);
-      else points[selectedIndex] = point;
-      saveCurve(points);
-    });
-    $('removePointBtn').addEventListener('click', () => {
-      if (selectedIndex === null || !canEditCurve()) return;
-      saveCurve(curves[selectedFan].filter((point, index) => index !== selectedIndex));
+    editors.forEach((editor, fan) => {
+      field('pointSelect', fan).addEventListener('change', () => {
+        const value = field('pointSelect', fan).value;
+        if (value !== '') selectPoint(fan, Number(value));
+        else { clearPointSelection(fan); updateChart(); updateControls(); }
+      });
+      field('createPointBtn', fan).addEventListener('click', () => {
+        if (!canEditCurve(fan)) return;
+        editor.selectedIndex = null;
+        editor.creatingPoint = true;
+        field('pointHeading', fan).textContent = 'New point — ' + fanTitle(fan);
+        field('editPointBtn', fan).textContent = 'Add point';
+        field('edit-input', fan).value = '';
+        field('edit-speed', fan).value = 50;
+        field('editSection', fan).style.display = 'block';
+        updateChart();
+        updateControls();
+      });
+      field('editPointBtn', fan).addEventListener('click', () => {
+        if (!canEditCurve(fan) || (!editor.creatingPoint && editor.selectedIndex === null)) return;
+        const input = field('edit-input', fan), speed = field('edit-speed', fan);
+        if (input.value === '' || speed.value === '') {
+          field('curve-status', fan).textContent = 'Enter an input and speed.'; return;
+        }
+        const point = { [inputKey(fan)]: Number(input.value), speed: Number(speed.value) };
+        const points = activeCurve(fan).map(point => ({ ...point }));
+        if (editor.creatingPoint) points.push(point);
+        else points[editor.selectedIndex] = point;
+        saveCurve(points, fan);
+      });
+      field('removePointBtn', fan).addEventListener('click', () => {
+        if (editor.selectedIndex === null || !canEditCurve(fan) || selectedAnchor(fan)) return;
+        saveCurve(activeCurve(fan).filter((point, index) => index !== editor.selectedIndex), fan);
+      });
     });
     $('retryCurves').addEventListener('click', fetchFanConfig);
     tabButtons.forEach(button => button.addEventListener('click', () => {
@@ -1026,7 +1157,7 @@
       tabContents.forEach(item => item.classList.remove('active'));
       button.classList.add('active');
       $(button.dataset.tab).classList.add('active');
-      if (myChart && button.dataset.tab === 'fanGraphTab') myChart.resize();
+      if (button.dataset.tab === 'fanGraphTab') editors.forEach(editor => editor.chart?.resize());
     }));
     window.addEventListener('DOMContentLoaded', initChart);
     // Settings and telemetry start without waiting for images or the chart library.

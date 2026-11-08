@@ -13,9 +13,9 @@ void fansetup() {
 }
 
 int outputFanSpeed(bool staticEnabled, int staticSpeed, bool followEnabled,
-                   PrinterFanSource source, const FanCurve &curve, float temperature) {
+                   PrinterFanSource source, const FanCurve &curve, const FanCurve &followCurve, float temperature) {
     if (staticEnabled) return clampFanSpeed(staticSpeed);
-    if (followEnabled) return clampFanSpeed(printerVariables.fans[static_cast<int>(source)].percent);
+    if (followEnabled) return calculateFollowFanSpeed(followCurve, printerVariables.fans[static_cast<int>(source)].percent);
     return calculateFanSpeed(curve, temperature);
 }
 
@@ -23,12 +23,12 @@ void fanloop(uint32_t now = millis()) {
     updatePostPrint(now);
     const float temperature = printerVariables.nozzletemp;
     int speed1 = outputFanSpeed(printerConfig.staticFan, printerConfig.staticFanSpeed,
-        printerConfig.followPrinterFan, printerConfig.printerFanSource, printerConfig.fanGraph, temperature);
+        printerConfig.followPrinterFan, printerConfig.printerFanSource, printerConfig.fanGraph, printerConfig.followGraph, temperature);
     if (printerVariables.postPrint[0].active) speed1 = printerVariables.postPrint[0].speed;
     int speed2 = speed1;
     if (!printerConfig.fansSynchronized) {
         speed2 = outputFanSpeed(printerConfig.staticFan2, printerConfig.staticFanSpeed2,
-            printerConfig.followPrinterFan2, printerConfig.printerFanSource2, printerConfig.fanGraph2, temperature);
+            printerConfig.followPrinterFan2, printerConfig.printerFanSource2, printerConfig.fanGraph2, printerConfig.followGraph2, temperature);
         if (printerVariables.postPrint[1].active) speed2 = printerVariables.postPrint[1].speed;
     }
     globalVariables.fanSpeed = speed1;

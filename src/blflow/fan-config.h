@@ -4,22 +4,23 @@
 #include <ArduinoJson.h>
 #include "types.h"
 
-inline void writeFanCurve(JsonArray array, const FanCurve &curve) {
+inline void writeFanCurve(JsonArray array, const FanCurve &curve, const char *inputKey = "temp") {
     for (const auto &point : curve) {
         JsonObject item = array.add<JsonObject>();
-        item["temp"] = point.first;
+        item[inputKey] = point.first;
         item["speed"] = point.second;
     }
 }
 
-inline bool readFanCurve(JsonVariantConst value, FanCurve &curve) {
+inline bool readFanCurve(JsonVariantConst value, FanCurve &curve, bool following = false) {
     if (!value.is<JsonArrayConst>()) return false;
     FanCurve parsed;
+    const char *inputKey = following ? "input" : "temp";
     for (JsonVariantConst point : value.as<JsonArrayConst>()) {
-        if (!point["temp"].is<float>() || !point["speed"].is<int>()) return false;
-        parsed.emplace_back(point["temp"].as<float>(), point["speed"].as<int>());
+        if (!point[inputKey].is<float>() || !point["speed"].is<int>()) return false;
+        parsed.emplace_back(point[inputKey].as<float>(), point["speed"].as<int>());
     }
-    if (!normalizeFanCurve(parsed)) return false;
+    if (!(following ? normalizeFollowFanCurve(parsed) : normalizeFanCurve(parsed))) return false;
     curve = std::move(parsed);
     return true;
 }
@@ -32,6 +33,7 @@ inline void initializeSecondFan(PrinterConfig &config) {
         config.followPrinterFan2 = config.followPrinterFan;
         config.printerFanSource2 = config.printerFanSource;
         config.postPrint2 = config.postPrint;
+        config.followGraph2 = config.followGraph;
     }
 }
 

@@ -36,8 +36,10 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig){
     json["postPrintSeconds"] = config.postPrint.seconds;
     json["postPrintSpeed"] = config.postPrint.speed;
     writeFanCurve(json["fanPoints"].to<JsonArray>(), config.fanGraph);
+    writeFanCurve(json["followPoints"].to<JsonArray>(), config.followGraph, "input");
     if (!config.fanGraph2.empty()) {
         writeFanCurve(json["fanPoints2"].to<JsonArray>(), config.fanGraph2);
+        writeFanCurve(json["followPoints2"].to<JsonArray>(), config.followGraph2, "input");
         json["staticFan2"] = config.staticFan2;
         json["staticFanSpeed2"] = config.staticFanSpeed2;
         json["followPrinterFan2"] = config.followPrinterFan2;
@@ -129,12 +131,15 @@ void loadFileSystem(){
         if (!readFanCurve(json["fanPoints"], loaded.fanGraph)) {
             Serial.println(F("Missing or invalid Fan 1 curve; using default curve"));
         }
+        // Old or invalid mappings keep identity following without losing other settings.
+        readFanCurve(json["followPoints"], loaded.followGraph, true);
         if (!json["fanPoints2"].isNull()) {
             if (!readFanCurve(json["fanPoints2"], loaded.fanGraph2)) {
                 loaded.fanGraph2 = defaultFanCurve();
                 Serial.println(F("Invalid Fan 2 curve; using default curve"));
             }
             loaded.staticFan2 = json["staticFan2"] | false;
+            readFanCurve(json["followPoints2"], loaded.followGraph2, true);
             loaded.staticFanSpeed2 = clampFanSpeed(json["staticFanSpeed2"] | 0);
             loaded.followPrinterFan2 = (json["followPrinterFan2"] | false) && !loaded.staticFan2;
             readPostPrintSettings(json["postPrint2"], json["postPrintSeconds2"], json["postPrintSpeed2"], loaded.postPrint2);
