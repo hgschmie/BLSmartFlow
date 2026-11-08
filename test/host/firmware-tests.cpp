@@ -10,7 +10,18 @@ const char *legacyConfig = R"({"ssid":"test-network","appw":"test-password","pri
 const char *newCurve = R"({"points":[{"temp":400,"speed":90},{"temp":0,"speed":10},{"temp":200,"speed":50}]})";
 const char *secondCurve = R"({"points":[{"temp":0,"speed":30},{"temp":400,"speed":70}]})";
 
+void resetMqttTransport() {
+    stopMockTasks();
+    mqttRequests = mqttResults = nullptr;
+    mqttWorker = nullptr;
+    mqttWorkInFlight = mqttDiscardResult = mqttTransportConnected = false;
+    mqttConnectionSettings = MqttSettings{};
+    mqttClient = PubSubClient(wifiSecureClient);
+    mqttattempt = 0;
+    WiFi.connectionStatus = WL_CONNECTED;
+}
 void reset() {
+    resetMqttTransport();
     printerConfig = PrinterConfig{};
     globalVariables = GlobalVariables{};
     printerVariables = PrinterVariables{};
@@ -19,13 +30,9 @@ void reset() {
     writeBudget = SIZE_MAX;
     webServer.params.clear();
     webServer.responses.clear();
+    webServer.onHandleClient = {};
     pwmValues.clear();
     mockMillis = 0;
-    WiFi.connectionStatus = WL_CONNECTED;
-    mqttClient.isConnected = true;
-    mqttClient.connectResult = mqttClient.dropDuringLoop = false;
-    mqttClient.beforeConnect = {};
-    mqttattempt = 0;
 }
 void putConfig(const std::string &json) {
     LittleFS.files[configPath] = std::make_shared<std::string>(json);
@@ -80,9 +87,11 @@ template<class T> void check(const char *name, T test) {
     reset(); test(); std::cout << "PASS: " << name << '\n';
 }
 
+#include "mqtt-tests.h"
 #include "post-print-tests.h"
 
 int main() {
+    mqttTests();
     postPrintTests();
     check("legacy settings leave following disabled", [] {
         putConfig(legacyConfig); reboot();

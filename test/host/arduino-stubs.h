@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "freertos-stubs.h"
 #define F(x) x
 #define PROGMEM
 class String : public std::string {
@@ -46,10 +47,15 @@ using byte = uint8_t;
 constexpr int WL_CONNECTED = 3, HEX = 16;
 inline long random(long maximum) { return maximum - 1; }
 struct WiFiMock {
-    int connectionStatus = WL_CONNECTED;
-    int status() { return connectionStatus; }
+    std::atomic<int> connectionStatus{WL_CONNECTED};
+    int status() { return connectionStatus.load(); }
 } WiFi;
-struct WiFiClientSecure { void setInsecure() {} };
+struct WiFiClientSecure {
+    void setInsecure() { assert(mockTaskThread); }
+    void setTimeout(int) { assert(mockTaskThread); }
+    void setHandshakeTimeout(int) { assert(mockTaskThread); }
+    void stop() { assert(mockTaskThread); }
+};
 class Print {
 public:
     virtual ~Print() = default;
@@ -64,21 +70,41 @@ public:
 };
 struct PubSubClient {
     bool isConnected = true, connectResult = false, dropDuringLoop = false;
-    std::function<void()> beforeConnect;
+    bool subscribeResult = true;
+    int connectCalls = 0, loopCalls = 0, disconnectCalls = 0;
+    std::function<void()> beforeConnect, beforeLoop;
+    std::function<void(char *, byte *, unsigned int)> callback;
+    Stream *output = nullptr;
+    std::string host, lastCode, lastSubscription, reportPayload;
     explicit PubSubClient(WiFiClientSecure &) {}
-    bool connected() { return isConnected; }
-    bool connect(const char *, const char *, const char *) {
+    bool connected() { assert(mockTaskThread); return isConnected; }
+    bool connect(const char *, const char *, const char *code) {
+        assert(mockTaskThread);
+        ++connectCalls;
+        lastCode = code;
         if (beforeConnect) beforeConnect();
         return isConnected = connectResult;
     }
-    int state() { return isConnected ? 0 : -1; }
-    void loop() { if (dropDuringLoop) isConnected = false; }
-    template<class... T> void subscribe(T...) {}
-    template<class... T> void setBufferSize(T...) {}
-    template<class... T> void setServer(T...) {}
-    template<class... T> void setStream(T...) {}
-    template<class... T> void setCallback(T...) {}
-    template<class... T> void setSocketTimeout(T...) {}
+    int state() { assert(mockTaskThread); return isConnected ? 0 : -2; }
+    void disconnect() { assert(mockTaskThread); ++disconnectCalls; isConnected = false; }
+    void loop() {
+        assert(mockTaskThread);
+        ++loopCalls;
+        if (beforeLoop) beforeLoop();
+        if (dropDuringLoop) isConnected = false;
+        if (isConnected && !reportPayload.empty()) {
+            for (auto c : reportPayload) output->write(static_cast<uint8_t>(c));
+            char topic[] = "device/test/report";
+            callback(topic, nullptr, reportPayload.size());
+            reportPayload.clear();
+        }
+    }
+    bool subscribe(const char *topic) { assert(mockTaskThread); lastSubscription = topic; return subscribeResult; }
+    void setBufferSize(int) { assert(mockTaskThread); }
+    void setServer(const char *ip, int) { assert(mockTaskThread); host = ip; }
+    void setStream(Stream &stream) { assert(mockTaskThread); output = &stream; }
+    void setCallback(decltype(callback) handler) { assert(mockTaskThread); callback = handler; }
+    void setSocketTimeout(int) { assert(mockTaskThread); }
 };
 inline bool failOpen=false, failRename=false, shortRead=false;
 inline size_t writeBudget = SIZE_MAX;
@@ -128,11 +154,14 @@ struct WebServer {
     String lastBody;
     void send(int status,const char* = "",const String& body = "") { responses.push_back(status); lastBody=body; }
     template<class... T> void sendHeader(T...) {}
-    template<class... T> void send_P(T...) {}
+    void send_P(int status, const char *, const char *body, int length) {
+        responses.push_back(status); lastBody.assign(body, length);
+    }
     template<class... T> void on(T...) {}
     void requestAuthentication() {}
     void begin() {}
-    void handleClient() {}
+    std::function<void()> onHandleClient;
+    void handleClient() { if (onHandleClient) onHandleClient(); }
     HTTPUpload& upload() { static HTTPUpload u; return u; }
 };
 struct MDNSMock { bool begin(const char*) { return true; } } MDNS;

@@ -89,9 +89,7 @@ void postPrintTests() {
             {"followPrinterFan2","on"},{"postPrint","on"},{"postPrint2","on"}}) == 200);
         report(R"({"print":{"big_fan2_speed":9}})");
         for (int loss = 0; loss < 3; ++loss) {
-            WiFi.connectionStatus = WL_CONNECTED;
-            mqttClient.isConnected = true;
-            mqttClient.dropDuringLoop = false;
+            connectTestMqtt();
             mockMillis = 5000;
             finishPrint(); assertPWM(0,100,100);
             if (loss == 0) WiFi.connectionStatus = 0;
@@ -103,9 +101,15 @@ void postPrintTests() {
             }
             if (loss == 2) mqttClient.dropDuringLoop = true;
             mqttloop();
+            waitForMqttResult();
+            if (loss != 0) mqttloop(); // Apply the worker's disconnect result.
             assert(!printerVariables.online && !printerVariables.printWasRunning);
             assert(globalVariables.fanSpeed == 28 && globalVariables.fanSpeed2 == 60);
             assert(postPrintSecondsRemaining(0,millis()) == 0 && postPrintSecondsRemaining(1,millis()) == 0);
+            if (loss == 1) {
+                mockMillis += mqttRetryMs;
+                mqttloop(); waitForMqttResult(); // Check fallback before reconnect.
+            }
             printerVariables.online = true;
             printState("FINISH"); printState("IDLE"); // Reconnection cannot revive the old timer.
             assertPWM(0,28,60);

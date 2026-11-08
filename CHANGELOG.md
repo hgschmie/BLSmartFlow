@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.13 — 2026-11-07
+
+- Fixed the web interface becoming unavailable when the printer is offline at startup or during reconnects. MQTT network operations now run in a background task so HTTP requests and fan control can continue.
+- Fixed retry pacing to wait three seconds after a failed attempt, added transport timeouts, and reconnect with updated printer settings while discarding stale connection results.
+- Added regression coverage for stalled connections and reads, printer recovery, configuration changes during connection, Wi-Fi loss, retry timing, and worker startup failures.
+
 ## 1.3.12 — 2026-10-23
 
 - Made fan settings percentage fields compact for three digits and Post Print duration fields for four digits, with room for the number controls. Changed the duration label from "s" to "seconds".

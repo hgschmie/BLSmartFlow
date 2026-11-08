@@ -15,9 +15,12 @@ with tempfile.TemporaryDirectory(prefix='blsmartflow-tests-') as work:
                  'WebServer.h', 'ESPmDNS.h', 'Update.h', 'pgmspace.h',
                  'WiFiClientSecure.h', 'PubSubClient.h', 'Stream.h']:
         (work / name).write_text('#include "arduino-stubs.h"\n')
+    (work / 'freertos').mkdir()
+    for name in ['FreeRTOS.h', 'queue.h', 'task.h']:
+        (work / 'freertos' / name).write_text('#include "freertos-stubs.h"\n')
     binary = work / 'firmware-tests'
     subprocess.run([
-        os.environ.get('CXX', 'c++'), '-std=c++17', '-Wall', '-Wextra',
+        os.environ.get('CXX', 'c++'), '-std=c++17', '-Wall', '-Wextra', '-pthread',
         '-Wno-unused-parameter', '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
         '-DSTRVERSION="host-test"', '-DSTRBUILDDATE="2026.10.23"',
         '-I' + str(work), '-I' + str(root / 'test/host'),

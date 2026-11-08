@@ -73,8 +73,8 @@ void loop(){
     serialLoop();
 
     if (globalVariables.started){
-        mqttloop();
         webserverloop();
+        mqttloop();
         
         if (WiFi.status() != WL_CONNECTED){
             Serial.print(F("Wifi connection dropped.  "));

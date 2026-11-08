@@ -40,6 +40,20 @@ To contribute to the Smartflow project, you'll need the following tools:
 7. Once the build process is complete, upload the firmware to your device using the "Upload" option in PlatformIO.
 8. After uploading the firmware, your BLSmartflow device should be ready to use.
 
+### OTA Updates with curl
+
+From the project folder, upload the versioned firmware image to the controller. Replace `CONTROLLER_IP` with the controller's IP address and adjust the filename for the version you want to install:
+
+```bash
+curl --fail --show-error \
+  -F "update=@build/esp32dev/firmware-1.3.13.bin" \
+  "http://CONTROLLER_IP/update"
+```
+
+Use `firmware-<version>.bin` for OTA uploads; the merged image is for flashing over USB. Check the response: `OK` means the update succeeded and the controller will reboot; `FAIL` means the update failed.
+
+When upgrading from firmware earlier than 1.3.13, keep the printer powered on and reachable during the upload so the old firmware's MQTT connection attempts do not block the web server.
+
 ### Setup Instructions
 Once you have uploaded the firmware to your device, please visit the [dutchdevelop.com/blsmartflow](https://www.dutchdevelop.com/blsmartflow) website for detailed setup instructions.
 
@@ -95,6 +109,12 @@ During the timer, its speed takes priority over the normal mode, and **Post Prin
 
 `/getOptions` and `/submitOptions` use `postPrint`, `postPrintSeconds`, and `postPrintSpeed`, with a `2` suffix for Fan 2. `/sensorData` returns `postPrintRemaining` and `postPrintRemaining2` as whole seconds rounded up, or zero when inactive. Synchronized outputs report the same remaining time.
 
+#### MQTT Availability
+
+The web interface and fan control remain available when the printer is off or unreachable. MQTT connection, subscription, reads, and disconnects run in a background task. Failed connections wait three seconds after completion before retrying; TCP/TLS and MQTT response waits also have timeouts.
+
+Saving a different printer IP, access code, or serial number closes the old connection and reconnects with the saved settings. Results from an attempt interrupted by a Wi-Fi loss or settings change are discarded. Printer reports and configuration changes are applied in the main loop so that Post Print timers and fan settings cannot be updated concurrently by the network task.
+
 #### Tests
 
 After a PlatformIO build has installed dependencies, run:
@@ -105,7 +125,7 @@ python3 test/version_build_test.py
 python3 test/run-host-tests.py
 ```
 
-The native tests use the production firmware handlers and ArduinoJson with simulated flash, HTTP, and GPIO I/O, plus address and undefined-behavior sanitizers. Physical fan operation and a power-cycle check should also be verified on the device after an OTA update.
+The native tests use the production firmware handlers and ArduinoJson with simulated flash, HTTP, and GPIO I/O, plus address and undefined-behavior sanitizers. MQTT tests run the actual background task on a host thread with simulated blocking network operations and queues. Physical fan operation and a power-cycle check should also be verified on the device after an OTA update.
 
 #### Generating .h Files for Compressed HTML
 
