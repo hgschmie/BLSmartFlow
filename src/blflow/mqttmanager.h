@@ -49,6 +49,7 @@ MqttSettings mqttConnectionSettings; // Main loop only.
 bool mqttWorkInFlight = false;
 bool mqttDiscardResult = false;
 bool mqttTransportConnected = false;
+MqttOperation mqttPendingOperation = MqttOperation::Poll; // Main loop only.
 uint32_t mqttattempt = 0; // Time of the last completed attempt, not its start.
 
 void ParseMQTTState(int code){
@@ -110,6 +111,27 @@ MqttSettings currentMqttSettings() {
 
 bool sameMqttSettings(const MqttSettings &a, const MqttSettings &b) {
     return strcmp(a.ip, b.ip) == 0 && strcmp(a.code, b.code) == 0 && strcmp(a.serial, b.serial) == 0;
+}
+
+struct MqttConnectionStatus {
+    const char *state;
+    uint32_t retryInSeconds;
+};
+
+MqttConnectionStatus mqttConnectionStatus(uint32_t now) {
+    // Read main-loop state only; HTTP must never inspect the worker's socket.
+    if (WiFi.status() != WL_CONNECTED) return {"wifi_disconnected", 0};
+    const MqttSettings settings = currentMqttSettings();
+    if (!settings.ip[0] || !settings.code[0] || !settings.serial[0]) return {"not_configured", 0};
+    if (mqttDiscardResult || (!sameMqttSettings(settings, mqttConnectionSettings) &&
+                             (mqttWorkInFlight || mqttTransportConnected))) return {"reconnecting", 0};
+    if (printerVariables.online && mqttTransportConnected) return {"connected", 0};
+    if (mqttWorkInFlight) {
+        return {mqttPendingOperation == MqttOperation::Connect ? "connecting" : "reconnecting", 0};
+    }
+    const uint32_t elapsed = now - mqttattempt;
+    const uint32_t remaining = elapsed < mqttRetryMs ? mqttRetryMs - elapsed : 0;
+    return {"retrying", (remaining + 999) / 1000};
 }
 
 void mqttCallback(char *, byte *, unsigned int) {
@@ -182,6 +204,7 @@ void scheduleMqtt(MqttOperation operation, const MqttSettings &settings = MqttSe
     request.settings = settings;
     // With one request in flight this queue has space. Never wait in loop().
     mqttWorkInFlight = xQueueSend(mqttRequests, &request, 0) == pdTRUE;
+    if (mqttWorkInFlight) mqttPendingOperation = operation;
 }
 
 void setupMqtt() {

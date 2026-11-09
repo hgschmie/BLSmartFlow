@@ -15,6 +15,7 @@ void resetMqttTransport() {
     mqttRequests = mqttResults = nullptr;
     mqttWorker = nullptr;
     mqttWorkInFlight = mqttDiscardResult = mqttTransportConnected = false;
+    mqttPendingOperation = MqttOperation::Poll;
     mqttConnectionSettings = MqttSettings{};
     mqttClient = PubSubClient(wifiSecureClient);
     mqttattempt = 0;

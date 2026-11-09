@@ -741,3 +741,57 @@ for (const status of [200, 500]) {
     assert.equal(page.get('fanButton2').disabled, false);
   });
 }
+
+async function connectionReport(page, state, retryInSeconds = 0) {
+  page.context.fetchSensorData();
+  await page.respond('/sensorData', { temp: 20, speed: 0, speed2: 0,
+    printerConnection: { state, retryInSeconds } });
+}
+
+test('printer connection status shows attempts, retry countdown and recovery', async () => {
+  const page = await readyPage();
+  for (const [state, seconds, expected] of [
+    ['connecting', 0, 'Connecting…'],
+    ['retrying', 3, 'Not connected, retrying in 3 seconds'],
+    ['retrying', 2, 'Not connected, retrying in 2 seconds'],
+    ['retrying', 1, 'Not connected, retrying in 1 second'],
+    ['retrying', 0, 'Not connected, retrying now…'],
+    ['connecting', 0, 'Connecting…'],
+    ['connected', 0, 'Connected'],
+    ['reconnecting', 0, 'Reconnecting…']
+  ]) {
+    await connectionReport(page, state, seconds);
+    assert.equal(page.get('printer-connection-text').textContent, 'Printer: ' + expected);
+    assert.equal(page.get('printer-connection').className, 'connection-status ' + (state === 'connected' ? 'connected' : 'disconnected'));
+  }
+});
+
+test('blocked connection states explain missing settings and Wi-Fi without a false countdown', async () => {
+  const page = await readyPage();
+  await connectionReport(page, 'not_configured');
+  assert.equal(page.get('printer-connection-text').textContent, 'Printer: Not connected, configure printer settings');
+  await connectionReport(page, 'wifi_disconnected');
+  assert.equal(page.get('printer-connection-text').textContent, 'Printer: Not connected, waiting for controller Wi-Fi');
+});
+
+test('failed, stalled and missing telemetry cannot leave a stale connected indication', async () => {
+  const page = await readyPage();
+  assert.equal(page.get('printer-connection-text').textContent, 'Printer: Status unavailable');
+  await connectionReport(page, 'connected');
+  page.advanceTime(4000);
+  await connectionReport(page, 'connected');
+  page.advanceTime(4000);
+  assert.equal(page.get('printer-connection-text').textContent, 'Printer: Connected');
+  page.context.fetchSensorData(); // A stalled request.
+  page.advanceTime(1000);
+  assert.equal(page.get('printer-connection-text').textContent, 'Printer: Status unavailable (controller not responding)');
+  assert.equal(page.get('printer-connection').className, 'connection-status');
+  await page.respond('/sensorData', { temp: 0, speed: 0, printerConnection: { state: 'connected' } });
+  assert.equal(page.get('printer-connection-text').textContent, 'Printer: Connected');
+  page.context.fetchSensorData(); await page.respond('/sensorData', {}, 500);
+  assert.match(page.get('printer-connection-text').textContent, /controller not responding/);
+  await connectionReport(page, 'retrying', 3);
+  assert.match(page.get('printer-connection-text').textContent, /retrying in 3 seconds/);
+  await connectionReport(page, 'retrying', -1);
+  assert.equal(page.get('printer-connection-text').textContent, 'Printer: Status unavailable');
+});

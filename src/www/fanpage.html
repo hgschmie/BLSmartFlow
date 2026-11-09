@@ -154,6 +154,10 @@
     .fan-stack:not(:disabled):hover, .fan-stack:focus-visible { outline: 2px solid white; outline-offset: 4px; border-radius: 4px; }
     #fan-action-status { margin: 0 0 1rem; text-align: center; }
     #fan-action-status:empty { display: none; }
+    .connection-status { display: flex; align-items: baseline; gap: .5rem; max-width: 100%; margin: 0 0 1rem; padding: .5rem .75rem; border: 1px solid rgba(255,255,255,.3); border-radius: 8px; background: rgba(0,0,0,.15); font-size: .9rem; line-height: 1.4; }
+    .connection-dot { width: .55rem; height: .55rem; flex-shrink: 0; border-radius: 50%; background: #c6d4e0; }
+    .connection-status.connected .connection-dot { background: #82e6a6; }
+    .connection-status.disconnected .connection-dot { background: #ffbe70; }
     .graph-status { width: 100%; max-width: var(--panel-max-width); }
     .graph-description { margin: .75rem 0 1rem; max-width: 500px; font-size: .9rem; line-height: 1.5; }
     #fanGraphTab { gap: 1.25rem; }
@@ -400,6 +404,10 @@
       </div>
       <span class='logo-text'>BL Smart Flow+</span>
     </div>
+    <p id="printer-connection" class="connection-status" role="status" aria-live="polite">
+      <span class="connection-dot" aria-hidden="true"></span>
+      <span id="printer-connection-text">Printer: Checking connection…</span>
+    </p>
     <p id="fan-action-status" role="alert"></p>
 
     <div class="tabs">
@@ -635,6 +643,7 @@
     let sensorRequestActive = false;
     let sensorGeneration = 0;
     let cancelingPostPrint = false;
+    let connectionStatusTimer;
     let curves = [[], []];
     let followCurves = [[], []];
     let lastSensor = null;
@@ -1035,7 +1044,31 @@
       $('blades' + fan).style.animation = percent === 0 ? 'none' : `spin ${.5 + (1 - percent / 100) * 4.5}s linear infinite`;
     }
 
+    function renderPrinterConnection(connection, controllerUnavailable = false) {
+      clearTimeout(connectionStatusTimer);
+      const messages = {
+        connected: 'Connected',
+        connecting: 'Connecting…',
+        reconnecting: 'Reconnecting…',
+        wifi_disconnected: 'Not connected, waiting for controller Wi-Fi',
+        not_configured: 'Not connected, configure printer settings'
+      };
+      let message = messages[connection?.state];
+      if (connection?.state === 'retrying' && Number.isInteger(connection.retryInSeconds) && connection.retryInSeconds >= 0) {
+        const seconds = connection.retryInSeconds;
+        message = seconds > 0 ? 'Not connected, retrying in ' + seconds + (seconds === 1 ? ' second' : ' seconds')
+          : 'Not connected, retrying now…';
+      }
+      $('printer-connection').className = 'connection-status' + (message
+        ? (connection.state === 'connected' ? ' connected' : ' disconnected') : '');
+      $('printer-connection-text').textContent = 'Printer: ' + (message ||
+        (controllerUnavailable ? 'Status unavailable (controller not responding)' : 'Status unavailable'));
+      // A stalled poll must not leave a stale green "Connected" indication.
+      if (message) connectionStatusTimer = setTimeout(() => renderPrinterConnection(null, true), 5000);
+    }
+
     function applySensorData(sensor) {
+      renderPrinterConnection(sensor.printerConnection);
       const speed2 = sensor.speed2 === undefined ? sensor.speed : sensor.speed2;
       lastSensor = sensor;
       renderTelemetry();
@@ -1082,6 +1115,7 @@
         if (generation === sensorGeneration) applySensorData(sensor);
       } catch (error) {
         if (generation !== sensorGeneration) return;
+        renderPrinterConnection(null, true);
         postPrintRemaining = [0, 0];
         renderFanSources();
         console.error('Unable to refresh fan speeds:', error);

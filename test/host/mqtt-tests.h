@@ -1,5 +1,12 @@
 #include <future>
 
+void assertConnectionState(const char *state, uint32_t retryInSeconds = 0) {
+    handleSensorData();
+    auto json = response();
+    assert(json["printerConnection"]["state"] == state);
+    assert(json["printerConnection"]["retryInSeconds"] == retryInSeconds);
+}
+
 void waitForMqttResult() {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     while (!uxQueueMessagesWaiting(mqttResults) && std::chrono::steady_clock::now() < deadline)
@@ -32,6 +39,56 @@ void connectTestMqtt() {
 }
 
 void mqttTests() {
+    check("connection status reports the actual retry countdown and connection result", [] {
+        putConfig(legacyConfig); reboot();
+        mqttClient.isConnected = false;
+        mockMillis = 1000;
+        setupMqtt();
+        assertConnectionState("retrying", 0);
+        mqttloop(); waitForMqttResult();
+        assertConnectionState("connecting"); // Completed result still belongs to the worker.
+        mqttloop();
+        const auto failedAt = mockMillis;
+        assertConnectionState("retrying", 3);
+        mockMillis = failedAt + 999; assertConnectionState("retrying", 3);
+        mockMillis = failedAt + 1000; assertConnectionState("retrying", 2);
+        mockMillis = failedAt + 2000; assertConnectionState("retrying", 1);
+        mockMillis = failedAt + 2999; assertConnectionState("retrying", 1);
+        mockMillis = failedAt + 3000; assertConnectionState("retrying", 0);
+        assert(mqttClient.connectCalls == 1); // Status reads cannot start network operations.
+        mqttClient.connectResult = true;
+        mqttloop(); waitForMqttResult(); mqttloop(); waitForMqttResult();
+        assertConnectionState("connected");
+        mqttClient.dropDuringLoop = true;
+        mqttloop(); waitForMqttResult(); mqttloop();
+        assertConnectionState("retrying", 3);
+    });
+    check("status hides obsolete connections immediately after settings changes and Wi-Fi loss", [] {
+        connectTestMqtt();
+        assertConnectionState("connected");
+        strcpy(printerConfig.accessCode,"NEW12345");
+        assertConnectionState("reconnecting");
+        mqttloop(); waitForMqttResult();
+        assertConnectionState("reconnecting");
+        mqttloop(); waitForMqttResult();
+        assertConnectionState("connecting");
+        mqttloop(); waitForMqttResult(); assertConnectionState("connected");
+        WiFi.connectionStatus = 0;
+        assertConnectionState("wifi_disconnected");
+        mqttloop();
+        WiFi.connectionStatus = WL_CONNECTED;
+        assertConnectionState("reconnecting");
+    });
+    check("missing printer fields explain why no retry is scheduled", [] {
+        putConfig(legacyConfig); reboot(); setupMqtt();
+        for (char *field : {printerConfig.printerIP, printerConfig.accessCode, printerConfig.serialNumber}) {
+            const char first = field[0]; field[0] = 0;
+            assertConnectionState("not_configured");
+            mqttloop(); assert(!mqttWorkInFlight);
+            field[0] = first;
+        }
+        assertConnectionState("retrying", 0);
+    });
     check("startup and HTTP handlers stay responsive throughout a stalled MQTT connection", [] {
         putConfig(legacyConfig); reboot();
         printerConfig.staticFan = true;
@@ -53,6 +110,7 @@ void mqttTests() {
             webserverloop();
             assert(webServer.responses.back() == 200);
             assert(globalVariables.fanSpeed == 37);
+            assertConnectionState("connecting");
         }
         assert(mqttClient.connectCalls == 1);
         blocked.release();
@@ -60,6 +118,7 @@ void mqttTests() {
         mqttClient.beforeConnect = {};
         mqttloop();
         assert(!printerVariables.online && !mqttWorkInFlight);
+        assertConnectionState("retrying", 3);
         mockMillis += mqttRetryMs - 1;
         mqttloop();
         assert(mqttClient.connectCalls == 1 && !mqttWorkInFlight);
@@ -138,10 +197,13 @@ void mqttTests() {
         mqttClient.isConnected = false;
         mockMillis = UINT32_MAX - 1500;
         setupMqtt(); mqttloop(); waitForMqttResult(); mqttloop();
+        assertConnectionState("retrying", 3);
         mockMillis += mqttRetryMs - 1; mqttloop();
+        assertConnectionState("retrying", 1);
         assert(!mqttWorkInFlight && mqttClient.connectCalls == 1);
         WiFi.connectionStatus = 0;
         ++mockMillis; mqttloop();
+        assertConnectionState("wifi_disconnected");
         assert(!mqttWorkInFlight && mqttClient.connectCalls == 1);
         WiFi.connectionStatus = WL_CONNECTED;
         mqttloop(); waitForMqttResult();
@@ -158,6 +220,7 @@ void mqttTests() {
         webServer.onHandleClient = handleGetOptions;
         webserverloop(); assert(webServer.responses.back() == 200);
         assert(!mqttWorkInFlight);
+        assertConnectionState("retrying", 3);
         mockFailQueueCreate = false; mockFailTaskCreate = true;
         mockMillis += mqttRetryMs; mqttloop();
         webserverloop(); assert(webServer.responses.back() == 200);

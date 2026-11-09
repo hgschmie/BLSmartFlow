@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0 — 2026-11-08
+
+- Added a printer connection indicator beneath the fan images, visible on both tabs. It shows Connected, Connecting, or Not connected with the actual retry countdown.
+- Added separate messages for reconnecting, missing printer settings, and unavailable controller Wi-Fi. Failed or stale status updates clear the Connected indication instead of leaving outdated information on the page.
+- Exposed connection state and retry seconds through `/sensorData` without accessing the MQTT socket from the web server.
+
 ## 1.4.1 — 2026-11-07
 
 - Click or tap a top fan image during Post Print to cancel its current timer and immediately resume its normal static, printer-follow, or temperature-curve control. Synchronized fans cancel together; independent fans cancel separately.

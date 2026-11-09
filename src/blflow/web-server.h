@@ -10,6 +10,7 @@
 #include <Update.h>
 #include "filesystem.h"
 #include "fans.h"
+#include "mqttmanager.h"
 
 
 WebServer webServer(80);
@@ -265,6 +266,9 @@ void handleSensorData() {
     doc["speed2"] = globalVariables.fanSpeed2;
     doc["postPrintRemaining"] = postPrintSecondsRemaining(0, now);
     doc["postPrintRemaining2"] = postPrintSecondsRemaining(1, now);
+    const auto connection = mqttConnectionStatus(now);
+    doc["printerConnection"]["state"] = connection.state;
+    doc["printerConnection"]["retryInSeconds"] = connection.retryInSeconds;
     for (int fan = 0; fan < printerFanCount; ++fan) {
         const char *name = printerFanSourceName(static_cast<PrinterFanSource>(fan));
         if (printerVariables.fans[fan].known) doc["printerFans"][name] = printerVariables.fans[fan].percent;

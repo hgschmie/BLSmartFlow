@@ -15,6 +15,7 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 - Per-fan printer fan following with adjustable speed mapping and a minimum starting speed
 - Per-fan Post Print timers with a chosen duration and speed
 - Separate animated fan indicators
+- Live printer connection status with a retry countdown
 
 ### Changelog
 
@@ -46,7 +47,7 @@ From the project folder, upload the versioned firmware image to the controller. 
 
 ```bash
 curl --fail --show-error \
-  -F "update=@build/esp32dev/firmware-1.4.1.bin" \
+  -F "update=@build/esp32dev/firmware-1.5.0.bin" \
   "http://CONTROLLER_IP/update"
 ```
 
@@ -64,7 +65,7 @@ Once you have uploaded the firmware to your device, please visit the [dutchdevel
 
 Versions use **major.feature.build**: the first number changes for a major overhaul, the middle number for feature additions, and the last number increments for every firmware build.
 
-`version_build.py` reserves the next build number in `platformio.ini` before compiling, including when Upload builds new firmware. A failed build still consumes its number. Cleaning, IDE metadata, filesystem-only operations, and uploading an existing binary with `nobuild` do not increment it. Commit the updated `custom_version` with the changes being built. To start a feature series at an exact release version, run `BLSF_RELEASE_VERSION=1.4.0 pio run -e esp32dev`. This records and builds 1.4.0; subsequent normal builds increment to 1.4.1, 1.4.2, and so on. Use the release override only when intentionally reserving a specific version.
+`version_build.py` reserves the next build number in `platformio.ini` before compiling, including when Upload builds new firmware. A failed build still consumes its number. Cleaning, IDE metadata, filesystem-only operations, and uploading an existing binary with `nobuild` do not increment it. Commit the updated `custom_version` with the changes being built. To start a feature series at an exact release version, run `BLSF_RELEASE_VERSION=1.5.0 pio run -e esp32dev`. This records and builds 1.5.0; subsequent normal builds increment to 1.5.1, 1.5.2, and so on. Use the release override only when intentionally reserving a specific version.
 
 The compiler and `.firmware` output filenames use the same reserved version. The displayed date comes from the build machine's local date. Web pages load the version from the firmware instead of keeping a separate hardcoded copy.
 
@@ -120,6 +121,10 @@ Click or tap the fan image at the top to cancel its current Post Print timer ear
 #### MQTT Availability
 
 The web interface and fan control remain available when the printer is off or unreachable. MQTT connection, subscription, reads, and disconnects run in a background task. Failed connections wait three seconds after completion before retrying; TCP/TLS and MQTT response waits also have timeouts.
+
+The indicator beneath the fan images shows **Connected**, **Connecting…**, or **Not connected, retrying in N seconds** on both tabs. Its countdown comes from the controller's retry schedule and refreshes every second. Missing printer settings, controller Wi-Fi loss, and reconnecting have separate messages. If a status request fails or no fresh status arrives for five seconds, the page shows **Status unavailable (controller not responding)**.
+
+`/sensorData` includes `printerConnection` with `state` (`connected`, `connecting`, `retrying`, `reconnecting`, `wifi_disconnected`, or `not_configured`) and `retryInSeconds`. Retry seconds are rounded up from the remaining delay; zero means the next attempt is due. The field is zero outside the retrying state.
 
 Saving a different printer IP, access code, or serial number closes the old connection and reconnects with the saved settings. Results from an attempt interrupted by a Wi-Fi loss or settings change are discarded. Printer reports and configuration changes are applied in the main loop so that Post Print timers and fan settings cannot be updated concurrently by the network task.
 
