@@ -16,6 +16,7 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 - Per-fan Post Print timers with a chosen duration and speed
 - Separate animated fan indicators
 - Live printer connection status with a retry countdown
+- Automatic Wi-Fi recovery hotspot with a built-in setup page
 
 ### Changelog
 
@@ -47,7 +48,7 @@ From the project folder, upload the versioned firmware image to the controller. 
 
 ```bash
 curl --fail --show-error \
-  -F "update=@build/esp32dev/firmware-1.5.0.bin" \
+  -F "update=@build/esp32dev/firmware-1.6.0.bin" \
   "http://CONTROLLER_IP/update"
 ```
 
@@ -59,15 +60,35 @@ When upgrading from firmware earlier than 1.3.13, keep the printer powered on an
 Once you have uploaded the firmware to your device, please visit the [dutchdevelop.com/blsmartflow](https://www.dutchdevelop.com/blsmartflow) website for detailed setup instructions.
 
 
+### Wi-Fi Recovery and Reconfiguration
+
+Firmware **1.6.0** connects using the saved Wi-Fi name and password, selecting an available access point by signal strength. It ignores the old saved BSSID (access point MAC address), so changing routers or mesh nodes does not lock the controller to a missing access point. Existing printer settings and fan configuration are retained.
+
+If no usable Wi-Fi settings exist, the controller starts a setup hotspot immediately. If the saved network cannot be reached at startup or drops out during operation, the hotspot starts after **30 seconds offline**. The controller keeps trying the saved network every 30 seconds, without blocking fan control or the setup page.
+
+1. Join **BL-SmartFlow-Setup-XXXXXX** from your phone or computer. The suffix identifies your controller.
+2. Use hotspot password **`smartflow-setup`**. Stay connected if your phone reports that this network has no Internet.
+3. Open **http://192.168.4.1/** if the setup page does not appear automatically.
+4. Enter your 2.4 GHz Wi-Fi network name and password, then select **Save and connect**. Leave the password blank to retain the saved password when keeping the same network name. Select **Open network** only for a network with no password.
+5. Once connected, the page shows the controller's new IP address. Rejoin your home network to open it. The setup hotspot closes after one minute of continuous connection to the home network.
+
+This page updates **only Wi-Fi settings**. Printer credentials, both fan curves, modes and Post Print settings remain intact. It works without Internet access, and does not reveal the saved Wi-Fi password. A save failure retains the old settings. If the submitted network details do not work, the hotspot stays available for another attempt. The hotspot uses the shared setup password above; it is only active during recovery and the one-minute reconnection grace period.
+
+You can also open `/wifi` or follow **Wi-Fi setup** at the bottom of the normal controller page while connected to your home network. `/fans` always opens fan control, including while the recovery hotspot is active. USB setup remains available through `src/www/wifiSetup.html`.
+
+To install this release on a controller already stranded on **1.5.0**, connect it over USB and close any serial monitor or USB setup page. From the project folder, `pio run -e esp32dev -t upload -t nobuild` uploads the existing build without reserving another version. This requires `build/esp32dev/firmware.bin` and its supporting build files to exist. If the build directory was cleaned, use `BLSF_RELEASE_VERSION=1.6.0 pio run -e esp32dev -t upload` to rebuild and upload 1.6.0 in one command. Avoid erasing flash or uploading the merged image if you need to preserve its configuration. The recovery hotspot becomes available only after the new firmware is installed.
+
 ### Development Notes
 
 #### Firmware Versioning
 
 Versions use **major.feature.build**: the first number changes for a major overhaul, the middle number for feature additions, and the last number increments for every firmware build.
 
-`version_build.py` reserves the next build number in `platformio.ini` before compiling, including when Upload builds new firmware. A failed build still consumes its number. Cleaning, IDE metadata, filesystem-only operations, and uploading an existing binary with `nobuild` do not increment it. Commit the updated `custom_version` with the changes being built. To start a feature series at an exact release version, run `BLSF_RELEASE_VERSION=1.5.0 pio run -e esp32dev`. This records and builds 1.5.0; subsequent normal builds increment to 1.5.1, 1.5.2, and so on. Use the release override only when intentionally reserving a specific version.
+`version_build.py` reserves the next build number in `platformio.ini` before compiling, including when Upload builds new firmware. A failed build still consumes its number. Cleaning, IDE metadata, filesystem-only operations, and uploading an existing binary with `nobuild` do not increment it. Commit the updated `custom_version` with the changes being built. To start a feature series at an exact release version, run `BLSF_RELEASE_VERSION=1.6.0 pio run -e esp32dev`. This records and builds 1.6.0; subsequent normal builds increment to 1.6.1, 1.6.2, and so on. Use the release override only when intentionally reserving a specific version.
 
 The compiler and `.firmware` output filenames use the same reserved version. The displayed date comes from the build machine's local date. Web pages load the version from the firmware instead of keeping a separate hardcoded copy.
+
+After a successful firmware build, the version script refreshes PlatformIO's project checksum to include the reserved version and generated headers. This prevents a subsequent `nobuild` upload from deleting the build directory because the version changed during compilation.
 
 Each build also writes the OTA-ready image to `build/esp32dev/firmware-<version>.bin`, for example `firmware-1.3.8.bin`. Use this versioned file when uploading through the web UI. PlatformIO's internal `firmware.bin` remains available for its upload and merge steps.
 
@@ -133,7 +154,7 @@ Saving a different printer IP, access code, or serial number closes the old conn
 After a PlatformIO build has installed dependencies, run:
 
 ```sh
-node --test test/settings-page.test.js
+node --test test/*-page.test.js
 python3 test/version_build_test.py
 python3 test/run-host-tests.py
 ```

@@ -4,7 +4,6 @@
 #include "types.h"
 #include <Arduino.h>
 
-unsigned long previousMillis = 0;
 const int baseInterval = 200;
 const int LED_PIN = 21;
 
@@ -34,14 +33,12 @@ void indicatorloop() {
             return;
         }
 
-        for (int i = 0; i < blinkTimes; i++) {
-            digitalWrite(LED_PIN, HIGH);
-            delay(baseInterval);
-            digitalWrite(LED_PIN, LOW);
-            delay(baseInterval);
-        }
-
-        delay(baseInterval * 4);
+        // Keep the same blink pattern without delaying HTTP, DNS or fan control.
+        const uint32_t flashingDuration = blinkTimes * 2 * baseInterval;
+        const uint32_t cycle = flashingDuration + 4 * baseInterval;
+        const uint32_t phase = static_cast<uint32_t>(millis()) % cycle;
+        digitalWrite(LED_PIN, phase < flashingDuration &&
+                     (phase / baseInterval) % 2 == 0 ? HIGH : LOW);
     }else{
         digitalWrite(LED_PIN, HIGH);
     }

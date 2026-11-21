@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.0 — 2026-11-20
+
+- Added an automatic Wi-Fi recovery hotspot and an embedded setup page. It starts immediately without usable settings or after 30 seconds offline, continues retrying the saved network, and closes after one minute connected.
+- Replaced saved-BSSID pinning with connection by SSID and signal strength, fixing failures after access-point changes even when the saved network name and password are correct. Removed the misleading “Bad WiFi credentials” and misspelled “alrady saved BSSID” messages.
+- Wi-Fi setup preserves printer credentials and both fans’ curves, modes and Post Print settings, validates input, and applies changes only after a successful flash write. Added a Wi-Fi setup link to the normal pages and support for full-length SSIDs/passwords.
+- Replaced blocking Wi-Fi connection waits and LED blink delays with timed updates so recovery HTTP, captive-portal DNS and fan control remain responsive. Web serving starts independently of Wi-Fi and discovery services.
+- Added recovery, retry, save-failure, persistence and setup-page regression tests. Regenerated the embedded HTML pages.
+- Fixed the build versioning hook so a subsequent `upload -t nobuild` does not delete the firmware due to a stale PlatformIO project checksum. Documented rebuilding and uploading together when build files are missing.
+
 ## 1.5.0 — 2026-11-08
 
 - Added a printer connection indicator beneath the fan images, visible on both tabs. It shows Connected, Connecting, or Not connected with the actual retry countdown.

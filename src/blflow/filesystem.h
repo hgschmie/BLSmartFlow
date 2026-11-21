@@ -12,12 +12,14 @@
 
 const char *configPath = "/blledconfig.json";
 
-bool saveFileSystem(const PrinterConfig &config = printerConfig){
+bool saveFileSystem(const PrinterConfig &config = printerConfig,
+                    const char *ssid = globalVariables.SSID,
+                    const char *password = globalVariables.APPW){
     Serial.println(F("Saving config"));
     
     JsonDocument json;
-    json["ssid"] = globalVariables.SSID;
-    json["appw"] = globalVariables.APPW;
+    json["ssid"] = ssid;
+    json["appw"] = password;
     json["printerIp"] = config.printerIP;
     json["accessCode"] = config.accessCode;
     json["serialNumber"] = config.serialNumber;

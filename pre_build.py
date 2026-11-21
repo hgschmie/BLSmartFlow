@@ -13,6 +13,7 @@ ASSET_HEADERS = {
     "fanpage.html": "fanpage.h",
     "updatepage.html": "updatePage.h",
     "favicon.ico": "favicon.h",
+    "wifiPortal.html": "wifiPortal.h",
 }
 
 SUPPORTED_EXTENSIONS = ["*.html", "*.js", "*.css", "*.svg", "*.png", "*.ico"]

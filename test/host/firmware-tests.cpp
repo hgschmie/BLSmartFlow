@@ -5,6 +5,7 @@
 #include "src/blflow/fans.h"
 #include "src/blflow/mqtt-report.h"
 #include "src/blflow/mqttmanager.h"
+#include "src/blflow/indicator.h"
 
 const char *legacyConfig = R"({"ssid":"test-network","appw":"test-password","printerIp":"192.0.2.83","accessCode":"TEST1234","serialNumber":"TESTSERIAL12345","bssi":"","debuging":true,"debugingchange":false,"mqttdebug":false,"fanPoints":[{"temp":0,"speed":0},{"temp":200,"speed":80},{"temp":400,"speed":100}]})";
 const char *newCurve = R"({"points":[{"temp":400,"speed":90},{"temp":0,"speed":10},{"temp":200,"speed":50}]})";
@@ -27,6 +28,12 @@ void reset() {
     globalVariables = GlobalVariables{};
     printerVariables = PrinterVariables{};
     LittleFS.files.clear();
+    LittleFS.mountResult = true;
+    wifiRuntime = WifiRuntime{};
+    wifiDns = DNSServer{};
+    WiFi.reset();
+    ESP.restarts = 0;
+    delayedMs = 0;
     failOpen = failRename = shortRead = false;
     writeBudget = SIZE_MAX;
     webServer.params.clear();
@@ -92,8 +99,10 @@ template<class T> void check(const char *name, T test) {
 #include "mqtt-tests.h"
 #include "post-print-tests.h"
 #include "follow-curve-tests.h"
+#include "wifi-tests.h"
 
 int main() {
+    wifiTests();
     mqttTests();
     postPrintTests();
     followCurveTests();

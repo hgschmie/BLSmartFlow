@@ -11,6 +11,7 @@
 #include "filesystem.h"
 #include "fans.h"
 #include "mqttmanager.h"
+#include "wifi-manager.h"
 
 
 WebServer webServer(80);
@@ -18,6 +19,57 @@ WebServer webServer(80);
 #include "../www/fanpage.h"
 #include "../www/updatePage.h"
 #include "../www/favicon.h"
+#include "../www/wifiPortal.h"
+
+void handleWifiPage() {
+    webServer.sendHeader("Cache-Control", "no-store");
+    webServer.sendHeader("Content-Encoding", "gzip");
+    webServer.send_P(200, "text/html", (const char*)wifiPortal_html_gz, (int)wifiPortal_html_gz_len);
+}
+
+void handleWifiStatus() {
+    JsonDocument doc;
+    const bool connected = WiFi.status() == WL_CONNECTED && !wifiRuntime.reconnectPending;
+    doc["ssid"] = globalVariables.SSID;
+    doc["hasPassword"] = globalVariables.APPW[0] != '\0';
+    doc["connected"] = connected;
+    doc["ip"] = connected ? WiFi.localIP().toString() : String("");
+    doc["apActive"] = wifiRuntime.apActive;
+    doc["firmwareversion"] = globalVariables.FWVersion;
+    String body;
+    serializeJson(doc, body);
+    webServer.sendHeader("Cache-Control", "no-store");
+    webServer.send(200, "application/json", body);
+}
+
+void handleSaveWifi() {
+    const String ssid = webServer.arg("ssid");
+    String password = webServer.arg("password");
+    const String open = webServer.arg("open");
+    if (!webServer.hasArg("ssid") || !webServer.hasArg("password") ||
+        (open != "true" && open != "false")) {
+        webServer.send(400, "text/plain", "Supply a network name, password and open-network choice");
+        return;
+    }
+    if (open == "true") password = "";
+    else if (password.length() == 0 && ssid == globalVariables.SSID) password = globalVariables.APPW;
+    if ((open != "true" && password.length() == 0) || !validWifiCredentials(ssid, password)) {
+        webServer.send(400, "text/plain", "Use a network name of 1–32 bytes and a password of 8–63 bytes (or 64 hexadecimal digits). Select Open network only for a network without a password.");
+        return;
+    }
+    PrinterConfig candidate = printerConfig;
+    candidate.BSSID[0] = '\0';
+    if (!saveFileSystem(candidate, ssid.c_str(), password.c_str())) {
+        webServer.send(500, "text/plain", "Could not save Wi-Fi settings; previous configuration retained");
+        return;
+    }
+    strcpy(globalVariables.SSID, ssid.c_str());
+    strcpy(globalVariables.APPW, password.c_str());
+    printerConfig = std::move(candidate);
+    requestWifiReconnect();
+    webServer.sendHeader("Cache-Control", "no-store");
+    webServer.send(200, "text/plain", "Wi-Fi settings saved. Connecting…");
+}
 
 bool isAuthorized() {
   return true; //webServer.authenticate("BLLC", printerConfig.webpagePassword);
@@ -295,16 +347,22 @@ void handleCancelPostPrint() {
 }
 
 void setupWebserver(){
-    if (!MDNS.begin(globalVariables.Host.c_str())) {
-        Serial.println(F("Error setting up MDNS responder!"));
-        while (1) {
-        delay(1000);
-        }
-    }
-    
     Serial.println(F("Setting up webserver"));
     
-    webServer.on("/", handleSetup);
+    webServer.on("/", HTTP_GET, []() {
+        if (wifiRuntime.apActive) handleWifiPage();
+        else handleSetup();
+    });
+    webServer.on("/fans", HTTP_GET, handleSetup);
+    webServer.on("/wifi", HTTP_GET, handleWifiPage);
+    webServer.on("/wifi/status", HTTP_GET, handleWifiStatus);
+    webServer.on("/wifi/save", HTTP_POST, handleSaveWifi);
+    webServer.onNotFound([]() {
+        if (wifiRuntime.apActive) {
+            webServer.sendHeader("Location", "http://192.168.4.1/");
+            webServer.send(302, "text/plain", "Open Wi-Fi setup");
+        } else webServer.send(404, "text/plain", "Not found");
+    });
     webServer.on("/favicon.ico", HTTP_GET, []() {
         webServer.sendHeader(F("Content-Encoding"), F("gzip"));
         webServer.send_P(200, "image/x-icon", (const char*)favicon_ico_gz, (int)favicon_ico_gz_len);

@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory(prefix='blsmartflow-tests-') as work:
     work = Path(work)
     for name in ['Arduino.h', 'WiFi.h', 'WiFiClient.h', 'FS.h', 'LittleFS.h',
                  'WebServer.h', 'ESPmDNS.h', 'Update.h', 'pgmspace.h',
-                 'WiFiClientSecure.h', 'PubSubClient.h', 'Stream.h']:
+                 'WiFiClientSecure.h', 'PubSubClient.h', 'Stream.h', 'DNSServer.h']:
         (work / name).write_text('#include "arduino-stubs.h"\n')
     (work / 'freertos').mkdir()
     for name in ['FreeRTOS.h', 'queue.h', 'task.h']:

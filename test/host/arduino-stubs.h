@@ -37,19 +37,58 @@ struct SerialMock {
     size_t write(uint8_t) { return 1; }
     size_t write(const uint8_t*, size_t n) { return n; }
 } Serial;
-struct ESPMock { void restart() {} } ESP;
+struct ESPMock { int restarts = 0; void restart() { ++restarts; } } ESP;
 inline uint32_t mockMillis = 0;
 inline unsigned long millis() { return mockMillis; }
-inline void delay(int) {}
+inline unsigned long delayedMs = 0;
+inline void delay(int ms) { delayedMs += ms; }
 
 // Connectivity substitutes exercise the real MQTT loop's fallback paths.
 using byte = uint8_t;
-constexpr int WL_CONNECTED = 3, HEX = 16;
+constexpr int WL_CONNECTED = 3, WL_DISCONNECTED = 6, HEX = 16;
+constexpr int WIFI_STA = 1, WIFI_AP_STA = 3;
+constexpr int WIFI_ALL_CHANNEL_SCAN = 1, WIFI_CONNECT_AP_BY_SIGNAL = 0;
+struct IPAddress {
+    String text;
+    IPAddress(int a, int b, int c, int d) : text(std::to_string(a)+"."+std::to_string(b)+"."+std::to_string(c)+"."+std::to_string(d)) {}
+    String toString() const { return text; }
+};
 inline long random(long maximum) { return maximum - 1; }
 struct WiFiMock {
     std::atomic<int> connectionStatus{WL_CONNECTED};
+    int beginCalls = 0, apCalls = 0, apStops = 0, modeValue = WIFI_STA;
+    bool apResult = true, persistentValue = true, autoReconnect = true;
+    std::string lastSSID, lastPassword;
+    const uint8_t *lastBSSID = nullptr;
     int status() { return connectionStatus.load(); }
+    void persistent(bool value) { persistentValue = value; }
+    void setAutoReconnect(bool value) { autoReconnect = value; }
+    void setHostname(const char *) {}
+    void setScanMethod(int) {}
+    void setSortMethod(int) {}
+    void mode(int value) { modeValue = value; }
+    void macAddress(uint8_t *mac) { const uint8_t value[6] = {0x10,0x20,0x30,0xAB,0xCD,0xEF}; memcpy(mac,value,6); }
+    void disconnect() { connectionStatus = WL_DISCONNECTED; }
+    void begin(const char *ssid, const char *password, int = 0, const uint8_t *bssid = nullptr) {
+        ++beginCalls; lastSSID=ssid; lastPassword=password; lastBSSID=bssid;
+    }
+    bool softAPConfig(IPAddress, IPAddress, IPAddress) { return true; }
+    bool softAP(const char *, const char *) { ++apCalls; return apResult; }
+    bool softAPdisconnect(bool) { ++apStops; modeValue=WIFI_STA; return true; }
+    IPAddress localIP() { return IPAddress(192,0,2,123); }
+    String BSSIDstr() { return "F0:9F:C2:24:20:1A"; }
+    void reset() {
+        beginCalls=apCalls=apStops=0; modeValue=WIFI_STA; apResult=true;
+        persistentValue=autoReconnect=true; lastSSID.clear(); lastPassword.clear(); lastBSSID=nullptr;
+    }
 } WiFi;
+struct DNSServer {
+    bool active = false;
+    int requests = 0;
+    bool start(int, const String &, const IPAddress &) { active=true; return true; }
+    void stop() { active=false; }
+    void processNextRequest() { ++requests; }
+};
 struct WiFiClientSecure {
     void setInsecure() { assert(mockTaskThread); }
     void setTimeout(int) { assert(mockTaskThread); }
@@ -122,6 +161,7 @@ public:
     void close() { contents.reset(); }
 };
 struct LittleFSMock {
+    bool mountResult = true;
     std::map<std::string,std::shared_ptr<std::string>> files;
     File open(const char* path,const char* mode) {
         if (*mode=='w') {
@@ -137,7 +177,7 @@ struct LittleFSMock {
     }
     bool remove(const char* p) { return files.erase(p)>0; }
     bool exists(const char* p) { return files.count(p)>0; }
-    bool begin() { return true; }
+    bool begin() { return mountResult; }
     void format() { files.clear(); }
 } LittleFS;
 constexpr int HTTP_POST=1, HTTP_GET=2;
@@ -158,6 +198,7 @@ struct WebServer {
         responses.push_back(status); lastBody.assign(body, length);
     }
     template<class... T> void on(T...) {}
+    template<class T> void onNotFound(T) {}
     void requestAuthentication() {}
     void begin() {}
     std::function<void()> onHandleClient;
@@ -174,7 +215,10 @@ struct UpdateMock {
 } Update;
 
 constexpr int OUTPUT=1;
+constexpr int HIGH=1, LOW=0;
 inline std::map<int,int> pwmValues;
+inline std::map<int,int> digitalValues;
 inline void pinMode(int,int) {}
+inline void digitalWrite(int pin,int level) { digitalValues[pin]=level; }
 inline void analogWrite(int pin,int duty) { pwmValues[pin]=duty; }
 inline long map(long value,long a,long b,long c,long d) { return (value-a)*(d-c)/(b-a)+c; }

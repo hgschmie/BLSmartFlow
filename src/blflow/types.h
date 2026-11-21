@@ -24,8 +24,8 @@ extern "C"
     PrinterVariables printerVariables;
 
     typedef struct GlobalVariablesStruct{
-        char SSID[32];
-        char APPW[63];
+        char SSID[33]; // Up to 32 bytes plus terminator.
+        char APPW[65]; // Up to 63 password bytes or a 64-digit hexadecimal PSK.
         String FWVersion = "Stable " STRVERSION " (" STRBUILDDATE ")";
         String Host = "BLFLOW";
         bool started = false;
@@ -40,8 +40,8 @@ extern "C"
         char accessCode[9];             //BBLP Access Code - used for MQTT reports
         char serialNumber[16];          //BBLP Serial Number - used for MQTT reports
 
-        char BSSID[18];                 //Nominated AP to connect to (Useful if multiple accesspoints with same name)
-        bool rescanWiFiNetwork = false; //Scans available WiFi networks for strongest signal
+        char BSSID[18];                 // Legacy field; connections now select an AP by SSID.
+        bool rescanWiFiNetwork = false; // Request a fresh connection by SSID.
 
         // Debugging
         bool debuging = true;          //Debugging for all interactions through functions

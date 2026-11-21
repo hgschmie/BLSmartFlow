@@ -5,6 +5,21 @@ import os
 import re
 
 
+def update_project_checksum(source, target, env):
+    """Keep PlatformIO's next invocation from deleting the build we just made.
+
+    PlatformIO records its project checksum before pre-build scripts run. Our
+    version reservation changes platformio.ini, and HTML generation may add
+    headers. Record the final state only after the firmware was built successfully.
+    """
+    from platformio.project.config import ProjectConfig
+    from platformio.project.helpers import compute_project_checksum
+
+    config = ProjectConfig(env.subst("$PROJECT_CONFIG"))
+    checksum_path = Path(env.subst("$PROJECT_BUILD_DIR")) / "project.checksum"
+    checksum_path.write_text(compute_project_checksum(config))
+
+
 def configure_version(env, targets, release_version=None):
     config_path = Path(env.subst("$PROJECT_CONFIG"))
     config = config_path.read_text()
@@ -46,3 +61,4 @@ if "Import" in globals():
     Import("env")
     from SCons.Script import COMMAND_LINE_TARGETS
     configure_version(env, COMMAND_LINE_TARGETS, os.environ.get("BLSF_RELEASE_VERSION"))
+    env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", update_project_checksum)

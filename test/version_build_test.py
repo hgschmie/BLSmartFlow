@@ -6,7 +6,14 @@ import runpy
 import tempfile
 import unittest
 
-configure_version = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'version_build.py'))['configure_version']
+version_script = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'version_build.py'))
+configure_version = version_script['configure_version']
+update_project_checksum = version_script['update_project_checksum']
+try:
+    from platformio.project.config import ProjectConfig
+    from platformio.run.helpers import clean_build_dir
+except ImportError:
+    ProjectConfig = None
 
 
 class BuildEnvironment(dict):
@@ -15,6 +22,8 @@ class BuildEnvironment(dict):
         self.config = config
 
     def subst(self, value):
+        if value == '$PROJECT_BUILD_DIR':
+            return str(self.config.parent / 'build')
         assert value == '$PROJECT_CONFIG'
         return str(self.config)
 
@@ -87,6 +96,29 @@ class BuildVersionTests(unittest.TestCase):
     def test_clean_does_not_apply_release_version(self):
         self.assertEqual(self.run_build(['clean'], '1.4.0')['FIRMWARE_VERSION'], '1.1.9')
         self.assertEqual(self.path.read_text(), self.original)
+
+    @unittest.skipIf(ProjectConfig is None, 'Run with PlatformIO Python to exercise its actual cleanup logic')
+    def test_successful_build_survives_cleanup_before_nobuild_upload(self):
+        with contextlib.chdir(self.path.parent):
+            build_dir = self.path.parent / 'build'
+            clean_build_dir(str(build_dir), ProjectConfig(str(self.path)))
+            env = self.run_build()
+            # The asset generator can also add headers after the initial checksum.
+            source_dir = self.path.parent / 'src'
+            source_dir.mkdir()
+            (source_dir / 'generated.h').write_text('// generated page\n')
+            firmware = build_dir / 'firmware.bin'
+            firmware.write_bytes(b'built firmware')
+            update_project_checksum([], [], env)
+            clean_build_dir(str(build_dir), ProjectConfig(str(self.path)))
+            self.assertEqual(firmware.read_bytes(), b'built firmware')
+            self.assertEqual(self.run_build(['upload', 'nobuild'])['FIRMWARE_VERSION'], '1.1.10')
+
+            # Unrelated config changes must still invalidate old build products.
+            self.path.write_text(self.path.read_text().replace('platform = espressif32',
+                                 'platform = espressif32\nbuild_flags = -DCHANGED'))
+            clean_build_dir(str(build_dir), ProjectConfig(str(self.path)))
+            self.assertFalse(firmware.exists())
 
 
 if __name__ == '__main__':

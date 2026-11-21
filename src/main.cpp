@@ -9,7 +9,7 @@
 #include "./blflow/ssdp.h"
 #include "./blflow/indicator.h"
 
-int wifi_reconnect_count = 0;
+bool networkDiscoveryStarted = false;
 
 void setup(){
     Serial.begin(115200);
@@ -32,30 +32,8 @@ void setup(){
 
     setupSerial();
 
-    if (strlen(globalVariables.SSID) == 0 || strlen(globalVariables.APPW) == 0) {
-        printerVariables.errorcode = "no config";
-        Serial.println(F("SSID or password is missing. Please configure both by going to: https://dutchdevelop.com/smartflow-configuration-setup/"));
-        return;
-    }
-    else if (printerVariables.errorcode == "no config"){
-        //if this routine set the error code, clear it
-        printerVariables.errorcode = "";
-    }
-    
-   
-    scanNetwork(); //Sets the MAC address for following connection attempt
-    if(!connectToWifi()){
-        printerVariables.errorcode = "no wifi";
-        return;
-    }
-    else if (printerVariables.errorcode == "no wifi"){
-        //if this routine set the error code, clear it
-        printerVariables.errorcode = "";
-    }
-    
+    setupWifi();
     setupWebserver();
-    delay(500);
-    start_ssdp();
     setupMqtt();
 
     Serial.println();
@@ -68,37 +46,23 @@ void setup(){
 }
 
 void loop(){
-    fanloop(); //Run fanloop at the start of the loop so its always updating before everything else.
+    wifiLoop();
+    fanloop();
+    webserverloop();
+    mqttloop();
     indicatorloop();
     serialLoop();
 
-    if (globalVariables.started){
-        webserverloop();
-        mqttloop();
-        
-        if (WiFi.status() != WL_CONNECTED){
-            Serial.print(F("Wifi connection dropped.  "));
-            Serial.print(F("Wifi Status: ")); 
-            Serial.println(wl_status_to_string(WiFi.status()));
-            Serial.println(F("Attempting to reconnect to WiFi..."));
-            wifi_reconnect_count += 1;
-            if(wifi_reconnect_count <= 2){
-                WiFi.disconnect();
-                delay(100);
-                WiFi.reconnect();
-            } else {
-                //Not connecting after 10 simple disconnect / reconnects
-                //Do something more drastic in case needing to switch to new AP
-                scanNetwork();
-                connectToWifi();
-                wifi_reconnect_count = 0;
-            }
-        }
-    }
-    if(printerConfig.rescanWiFiNetwork)
-    {
-        Serial.println(F("Web submitted refresh of Wifi Scan (assigning Strongest AP)"));
-        scanNetwork(); //Sets the MAC address for following connection attempt
-        printerConfig.rescanWiFiNetwork = false;
+    const bool connected = WiFi.status() == WL_CONNECTED;
+    if (connected && !networkDiscoveryStarted) {
+        // Discovery failure must never prevent HTTP or the recovery portal.
+        if (!MDNS.begin(globalVariables.Host.c_str()))
+            Serial.println(F("mDNS unavailable; use the controller IP address"));
+        start_ssdp();
+        networkDiscoveryStarted = true;
+    } else if (!connected && networkDiscoveryStarted) {
+        MDNS.end();
+        SSDP.end();
+        networkDiscoveryStarted = false;
     }
 }
