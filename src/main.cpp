@@ -14,6 +14,7 @@ bool networkDiscoveryStarted = false;
 void setup(){
     Serial.begin(115200);
     delay(100);
+    setupDiagnostics();
     Serial.println(F("Initializing"));
     Serial.println(ESP.getFreeHeap());
     Serial.println("");
@@ -46,6 +47,7 @@ void setup(){
 }
 
 void loop(){
+    diagnosticsLoop();
     wifiLoop();
     fanloop();
     webserverloop();

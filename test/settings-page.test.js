@@ -105,6 +105,25 @@ async function readyPage(config = baseConfig, mappings = {}) {
   return page;
 }
 
+test('Debugging controls both detail switches and preserves their preferences while off', async () => {
+  const page = await readyPage({ ...baseConfig, debuging: false, debugingchange: true, mqttdebug: true });
+  for (const name of ['debugingchange', 'mqttdebug']) {
+    assert.equal(page.get(name).disabled, true);
+    assert.equal(page.get(name).checked, true);
+  }
+  page.get('debuging').checked = true;
+  page.trigger('debuging', 'change');
+  assert.equal(page.get('debugingchange').disabled, false);
+  assert.equal(page.get('mqttdebug').disabled, false);
+  page.get('debuging').checked = false;
+  page.trigger('debuging', 'change');
+  page.context.submitOptions({ preventDefault() {} });
+  const parameters = new URLSearchParams(page.requests.at(-1).body);
+  assert.equal(parameters.get('debuging'), 'off');
+  assert.equal(parameters.get('debugingchange'), 'on');
+  assert.equal(parameters.get('mqttdebug'), 'on');
+});
+
 test('settings load without waiting for external images or the chart library', () => {
   const page = loadPage({ chartAvailable: false });
   assert.equal(page.requests.length, 1);

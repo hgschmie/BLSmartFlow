@@ -20,11 +20,14 @@ void resetMqttTransport() {
     mqttConnectionSettings = MqttSettings{};
     mqttClient = PubSubClient(wifiSecureClient);
     mqttattempt = 0;
+    mqttWorkStarted = mqttConnectAttempts = mqttConnections = mqttReports = mqttLastReportAt = 0;
+    mqttLastState = -1;
     WiFi.connectionStatus = WL_CONNECTED;
 }
 void reset() {
     resetMqttTransport();
     printerConfig = PrinterConfig{};
+    applyDebugLogging();
     globalVariables = GlobalVariables{};
     printerVariables = PrinterVariables{};
     LittleFS.files.clear();
@@ -41,6 +44,19 @@ void reset() {
     webServer.onHandleClient = {};
     pwmValues.clear();
     mockMillis = 0;
+    Serial.output.clear();
+    webServer.headers.clear();
+    diagnosticBootId[0] = '\0';
+    diagnosticLastLog = diagnosticLastLoop = diagnosticMaxLoopGap = 0;
+    diagnosticLoopSeen = false;
+    diagnosticFansSeen = false;
+    diagnosticLastFanLog = 0;
+    for (int fan = 0; fan < 2; ++fan) {
+        diagnosticLastFanSpeeds[fan] = -1;
+        diagnosticLastFanModes[fan] = "";
+    }
+    diagnosticWifiDisconnects = diagnosticWifiReason = 0;
+    mockResetReason = ESP_RST_POWERON;
 }
 void putConfig(const std::string &json) {
     LittleFS.files[configPath] = std::make_shared<std::string>(json);
@@ -100,8 +116,12 @@ template<class T> void check(const char *name, T test) {
 #include "post-print-tests.h"
 #include "follow-curve-tests.h"
 #include "wifi-tests.h"
+#include "diagnostics-tests.h"
+#include "debug-log-tests.h"
 
 int main() {
+    debugLoggingTests();
+    diagnosticsTests();
     wifiTests();
     mqttTests();
     postPrintTests();

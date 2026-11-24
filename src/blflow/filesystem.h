@@ -8,6 +8,7 @@
 #include <LittleFS.h>
 #include "types.h"
 #include "fan-config.h"
+#include "debug-log.h"
 #include <memory>
 
 const char *configPath = "/blledconfig.json";
@@ -15,7 +16,7 @@ const char *configPath = "/blledconfig.json";
 bool saveFileSystem(const PrinterConfig &config = printerConfig,
                     const char *ssid = globalVariables.SSID,
                     const char *password = globalVariables.APPW){
-    Serial.println(F("Saving config"));
+    if (debugLoggingEnabled()) Serial.println(F("Saving config"));
     
     JsonDocument json;
     json["ssid"] = ssid;
@@ -74,11 +75,12 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig,
         Serial.println(F("Failed to replace config"));
         return false;
     }
-    Serial.println(F("Config Saved"));
+    if (debugLoggingEnabled()) Serial.println(F("Config Saved"));
     return true;
 }
 
 void loadFileSystem(){
+    applyDebugLogging();
     Serial.println(F("Loading config"));
     
     File configFile;
@@ -151,6 +153,7 @@ void loadFileSystem(){
         }
         if (!loaded.fansSynchronized) initializeSecondFan(loaded);
         printerConfig = std::move(loaded);
+        applyDebugLogging();
 
         Serial.println(F("Loaded config"));
     } else {

@@ -8,6 +8,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "freertos-stubs.h"
@@ -31,15 +32,34 @@ public:
     size_t readBytes(char* p, size_t n) { n=std::min(n,size()-cursor); memcpy(p,data()+cursor,n); cursor+=n; return n; }
 };
 struct SerialMock {
-    template<class... T> void println(T...) {}
-    template<class... T> void print(T...) {}
-    template<class... T> void printf(T...) {}
-    size_t write(uint8_t) { return 1; }
-    size_t write(const uint8_t*, size_t n) { return n; }
+    std::string output;
+    template<class T> void print(const T &value) {
+        std::ostringstream text; text << value; output += text.str();
+    }
+    void println() { output += '\n'; }
+    template<class T> void println(const T &value) { print(value); println(); }
+    template<class... T> void printf(const char *format, T... args) {
+        char buffer[1024]; snprintf(buffer, sizeof(buffer), format, args...); output += buffer;
+    }
+    size_t write(uint8_t value) { output += static_cast<char>(value); return 1; }
+    size_t write(const uint8_t* data, size_t n) { output.append(reinterpret_cast<const char *>(data), n); return n; }
 } Serial;
-struct ESPMock { int restarts = 0; void restart() { ++restarts; } } ESP;
+struct ESPMock {
+    int restarts = 0;
+    void restart() { ++restarts; }
+    uint32_t getFreeHeap() { return 120000; }
+    uint32_t getMinFreeHeap() { return 100000; }
+    uint32_t getMaxAllocHeap() { return 60000; }
+} ESP;
 inline uint32_t mockMillis = 0;
 inline unsigned long millis() { return mockMillis; }
+enum esp_reset_reason_t { ESP_RST_UNKNOWN, ESP_RST_POWERON, ESP_RST_EXT, ESP_RST_SW,
+    ESP_RST_PANIC, ESP_RST_INT_WDT, ESP_RST_TASK_WDT, ESP_RST_WDT,
+    ESP_RST_DEEPSLEEP, ESP_RST_BROWNOUT, ESP_RST_SDIO };
+inline esp_reset_reason_t mockResetReason = ESP_RST_POWERON;
+inline esp_reset_reason_t esp_reset_reason() { return mockResetReason; }
+inline uint32_t esp_random() { static uint32_t next = 0x12345678; return next++; }
+inline int64_t esp_timer_get_time() { return static_cast<int64_t>(mockMillis) * 1000; }
 inline unsigned long delayedMs = 0;
 inline void delay(int ms) { delayedMs += ms; }
 
@@ -52,14 +72,26 @@ struct IPAddress {
     String text;
     IPAddress(int a, int b, int c, int d) : text(std::to_string(a)+"."+std::to_string(b)+"."+std::to_string(c)+"."+std::to_string(d)) {}
     String toString() const { return text; }
+    friend std::ostream &operator<<(std::ostream &out, const IPAddress &ip) { return out << ip.text; }
 };
 inline long random(long maximum) { return maximum - 1; }
+enum arduino_event_id_t { ARDUINO_EVENT_WIFI_STA_CONNECTED, ARDUINO_EVENT_WIFI_STA_DISCONNECTED,
+    ARDUINO_EVENT_WIFI_STA_GOT_IP, ARDUINO_EVENT_WIFI_STA_LOST_IP, ARDUINO_EVENT_WIFI_STA_STOP };
+struct arduino_event_info_t {
+    struct { uint8_t bssid[6] = {}; uint8_t reason = 0; int8_t rssi = 0; } wifi_sta_disconnected;
+    struct { uint8_t bssid[6] = {}; uint8_t channel = 0; } wifi_sta_connected;
+};
 struct WiFiMock {
     std::atomic<int> connectionStatus{WL_CONNECTED};
     int beginCalls = 0, apCalls = 0, apStops = 0, modeValue = WIFI_STA;
     bool apResult = true, persistentValue = true, autoReconnect = true;
     std::string lastSSID, lastPassword;
     const uint8_t *lastBSSID = nullptr;
+    std::function<void(arduino_event_id_t, arduino_event_info_t)> eventHandler;
+    void onEvent(decltype(eventHandler) callback) { eventHandler = callback; }
+    String macAddress() { return "10:20:30:AB:CD:EF"; }
+    int32_t RSSI() { return -50; }
+    int32_t channel() { return 7; }
     int status() { return connectionStatus.load(); }
     void persistent(bool value) { persistentValue = value; }
     void setAutoReconnect(bool value) { autoReconnect = value; }
@@ -80,6 +112,7 @@ struct WiFiMock {
     void reset() {
         beginCalls=apCalls=apStops=0; modeValue=WIFI_STA; apResult=true;
         persistentValue=autoReconnect=true; lastSSID.clear(); lastPassword.clear(); lastBSSID=nullptr;
+        eventHandler = {};
     }
 } WiFi;
 struct DNSServer {
@@ -186,6 +219,7 @@ constexpr size_t UPDATE_SIZE_UNKNOWN=0;
 struct HTTPUpload { int status=0; String filename; uint8_t* buf=nullptr; size_t currentSize=0,totalSize=0; };
 struct WebServer {
     std::map<std::string,String> params;
+    std::map<std::string,String> headers;
     std::vector<int> responses;
     WebServer(int) {}
     int args() { return params.size(); }
@@ -193,7 +227,9 @@ struct WebServer {
     bool hasArg(const char* key) { return params.count(key); }
     String lastBody;
     void send(int status,const char* = "",const String& body = "") { responses.push_back(status); lastBody=body; }
-    template<class... T> void sendHeader(T...) {}
+    void sendHeader(const String &name, const String &value, bool = false) { headers[name] = value; }
+    int method() { return HTTP_GET; }
+    String uri() { return "/unknown"; }
     void send_P(int status, const char *, const char *body, int length) {
         responses.push_back(status); lastBody.assign(body, length);
     }

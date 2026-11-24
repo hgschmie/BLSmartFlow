@@ -44,9 +44,9 @@ extern "C"
         bool rescanWiFiNetwork = false; // Request a fresh connection by SSID.
 
         // Debugging
-        bool debuging = true;          //Debugging for all interactions through functions
-        bool debugingchange = true;     //Default debugging level - to shows onChange
-        bool mqttdebug = false;         //Writes each packet from BBLP to the serial log
+        bool debuging = true;          // Master switch for application debug logging.
+        bool debugingchange = true;    // Fan output/mode changes; requires debuging.
+        bool mqttdebug = false;        // Filtered printer reports; requires debuging.
 
         bool fansSynchronized = true;
         bool staticFan = false;

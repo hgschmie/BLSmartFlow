@@ -12,9 +12,19 @@
 #include "fans.h"
 #include "mqttmanager.h"
 #include "wifi-manager.h"
+#include "diagnostics.h"
 
 
 WebServer webServer(80);
+
+void handleDiagnostics() {
+    JsonDocument doc;
+    writeDiagnostics(doc, millis());
+    String body;
+    serializeJson(doc, body);
+    webServer.sendHeader("Cache-Control", "no-store");
+    webServer.send(200, "application/json", body);
+}
 
 #include "../www/fanpage.h"
 #include "../www/updatePage.h"
@@ -143,7 +153,7 @@ void handleGetOptions(){
     serializeJson(doc, jsonString);
     webServer.send(200, "application/json", jsonString);
 
-    Serial.println(F("Packet sent to setuppage"));
+    if (debugLoggingEnabled()) Serial.println(F("Packet sent to setuppage"));
 }
 
 // All web updates are staged, persisted, then applied to the running controller.
@@ -255,6 +265,7 @@ void submitOptions() {
     }
     cancelChangedPostPrint(printerConfig, candidate);
     printerConfig = std::move(candidate);
+    applyDebugLogging();
     fanloop();
     webServer.send(200, "text/plain", "Settings saved");
 }
@@ -357,7 +368,12 @@ void setupWebserver(){
     webServer.on("/wifi", HTTP_GET, handleWifiPage);
     webServer.on("/wifi/status", HTTP_GET, handleWifiStatus);
     webServer.on("/wifi/save", HTTP_POST, handleSaveWifi);
+    webServer.on("/diagnostics", HTTP_GET, handleDiagnostics);
     webServer.onNotFound([]() {
+        // URI excludes query parameters; do not log submitted settings/secrets.
+        if (debugLoggingEnabled())
+            Serial.printf("[http uptime=%lus] Unhandled method=%d path=%.160s\n",
+                static_cast<unsigned long>(millis() / 1000), webServer.method(), webServer.uri().c_str());
         if (wifiRuntime.apActive) {
             webServer.sendHeader("Location", "http://192.168.4.1/");
             webServer.send(302, "text/plain", "Open Wi-Fi setup");

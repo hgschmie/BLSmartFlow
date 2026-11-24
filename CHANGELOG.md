@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.6.4 — 2026-11-23
+
+- Consolidated routine serial diagnostics under the existing Debugging switch. It now controls five-second health reports, Wi-Fi/MQTT connection events, and routine HTTP/configuration messages; `/diagnostics` and its counters remain available when logging is off.
+- Connected the previously unused Debug OnChange Events switch to fan output/mode-change messages. MQTT Logging still prints filtered printer reports; both detail switches now require Debugging. Removed the generic per-report `Change from MQTT` message.
+- Applied logging preferences immediately after a successful save and on boot, with an atomic settings snapshot for Wi-Fi callbacks. Disabled detail controls when Debugging is off while preserving their selections, added explanatory text, and regenerated the embedded pages.
+- Kept boot/setup information, storage/OTA failures, and ESP32 library errors visible. Removed credential echoes from USB configuration messages. Added regression coverage for logging controls, persistence, failed saves, and continued fan/MQTT operation with logging off.
+
+## 1.6.3 — 2026-11-23
+
+- Increased periodic serial health logging from every 15 seconds to every five seconds, including both fans' commanded speeds and control modes. Updated the cadence regression test and documentation; regenerated the embedded pages.
+
+## 1.6.2 — 2026-11-23
+
+- Added both fans' commanded output percentages and active control modes to `/diagnostics` and serial health messages. Follow mode includes the selected printer fan and its reported percentage; Post Print includes the remaining seconds. Synchronized outputs correctly use Fan 1's settings.
+- Added serial `[fans]` messages when output percentages or control modes change, limited to one message per second, to capture changes between health messages. Diagnostics report nozzle temperature and distinguish unknown printer-fan readings from zero; they do not alter PWM outputs or expire timers.
+- Added fan-diagnostic regression tests and regenerated the embedded pages. Investigation of the reported outages continues; these changes do not claim a connection fix.
+
+## 1.6.1 — 2026-11-23
+
+- Added connection diagnostics to investigate outages that also occur with 1.5.0: a boot identifier and reset reason, Wi-Fi association/disconnection events with reason codes, and a serial health message every 15 seconds.
+- Added a read-only `/diagnostics` endpoint with uptime, controller MAC/IP, access-point BSSID/channel/signal, Wi-Fi disconnect count, MQTT connection/report counters and pending-operation age, heap usage, and the longest main-loop gap. It does not return Wi-Fi passwords or printer credentials.
+- Logged MQTT connection invalidation and the paths of unhandled HTTP requests. Added diagnostic regression tests; retained 1.6.0's recovery behavior and regenerated the embedded pages. This is a diagnostic build, not a confirmed fix for the reported outages.
+
 ## 1.6.0 — 2026-11-20
 
 - Added an automatic Wi-Fi recovery hotspot and an embedded setup page. It starts immediately without usable settings or after 30 seconds offline, continues retrying the saved network, and closes after one minute connected.

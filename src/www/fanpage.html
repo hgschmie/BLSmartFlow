@@ -600,25 +600,26 @@
           <h2>Debugging</h2>
           <div class="fan-option-row">
             <label class="switch">
-              <input type="checkbox" id="debuging" name="debuging">
+              <input type="checkbox" id="debuging" name="debuging" aria-describedby="debugging-help">
               <span class="slider round"></span>
             </label>
             <label for="debuging">Debugging</label>
           </div>
           <div class="fan-option-row">
             <label class="switch">
-              <input type="checkbox" id="debugingchange" name="debugingchange">
+              <input type="checkbox" id="debugingchange" name="debugingchange" aria-describedby="debugging-help">
               <span class="slider round"></span>
             </label>
             <label for="debugingchange">Debug OnChange Events</label>
           </div>
           <div class="fan-option-row">
             <label class="switch">
-              <input type="checkbox" id="mqttdebug" name="mqttdebug">
+              <input type="checkbox" id="mqttdebug" name="mqttdebug" aria-describedby="debugging-help">
               <span class="slider round"></span>
             </label>
             <label for="mqttdebug">MQTT Logging</label>
           </div>
+          <p id="debugging-help" style="font-size: .85rem; color: #555;">Debugging enables serial connection messages and a health report every five seconds. Debug OnChange Events adds fan speed and mode changes; MQTT Logging adds filtered printer reports. Both require Debugging. Save to apply.</p>
           </fieldset>
           <input type='submit' id='saveOptions' value='Save' disabled>
         </form>
@@ -710,6 +711,9 @@
       $('saveOptions').disabled = !optionsLoaded || optionsSaving || curveSaving || cancelingPostPrint;
       renderFeatureSections();
       renderFanSources();
+      for (const name of ['debugingchange', 'mqttdebug']) {
+        $(name).disabled = !$('debuging').checked || !optionsLoaded || optionsSaving || cancelingPostPrint;
+      }
       for (let fan = 0; fan < 2; ++fan) {
         const editable = Boolean(canEditCurve(fan));
         const editor = editors[fan];
@@ -843,6 +847,10 @@
       parameters.set('staticfan', $('staticfan').checked ? 'on' : 'off');
       parameters.set('followPrinterFan', $('followPrinterFan').checked ? 'on' : 'off');
       parameters.set('postPrint', $('postPrint').checked ? 'on' : 'off');
+      // Keep the detail preferences when the master disables their controls.
+      for (const name of ['debuging', 'debugingchange', 'mqttdebug']) {
+        parameters.set(name, $(name).checked ? 'on' : 'off');
+      }
       if (!$('fansSynchronized').checked) {
         parameters.set('staticfan2', $('staticfan2').checked ? 'on' : 'off');
         parameters.set('followPrinterFan2', $('followPrinterFan2').checked ? 'on' : 'off');
@@ -1141,6 +1149,7 @@
       markSettingsChanged();
     });
     $('settings-form').addEventListener('input', markSettingsChanged);
+    $('debuging').addEventListener('change', markSettingsChanged);
     for (const suffix of ['', '2']) {
       $('postPrint' + suffix).addEventListener('change', markSettingsChanged);
       $('printerFanSource' + suffix).addEventListener('change', markSettingsChanged);

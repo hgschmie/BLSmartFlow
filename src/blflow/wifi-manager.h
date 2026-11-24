@@ -61,8 +61,10 @@ void startWifiAttempt(uint32_t now) {
     // Never retry a secured network with its password silently removed.
     WiFi.disconnect();
     WiFi.begin(globalVariables.SSID, globalVariables.APPW);
-    Serial.print(F("Connecting to Wi-Fi network: "));
-    Serial.println(globalVariables.SSID);
+    if (debugLoggingEnabled()) {
+        Serial.print(F("Connecting to Wi-Fi network: "));
+        Serial.println(globalVariables.SSID);
+    }
 }
 
 void requestWifiReconnect(uint32_t now = millis()) {
@@ -115,8 +117,10 @@ void wifiLoop(uint32_t now = millis()) {
             wifiRuntime.connectedSince = now;
             Serial.print(F("IP_ADDRESS:")); // Used by the USB setup page.
             Serial.println(WiFi.localIP());
-            Serial.print(F("Connected Wi-Fi access point: "));
-            Serial.println(WiFi.BSSIDstr());
+            if (debugLoggingEnabled()) {
+                Serial.print(F("Connected Wi-Fi access point: "));
+                Serial.println(WiFi.BSSIDstr());
+            }
         }
         if (printerVariables.errorcode == "no wifi" || printerVariables.errorcode == "no config")
             printerVariables.errorcode = "";
@@ -132,7 +136,7 @@ void wifiLoop(uint32_t now = millis()) {
     if (wifiRuntime.wasConnected) {
         wifiRuntime.wasConnected = false;
         wifiRuntime.offlineSince = now;
-        Serial.println(F("Wi-Fi connection lost; retrying saved network"));
+        if (debugLoggingEnabled()) Serial.println(F("Wi-Fi connection lost; retrying saved network"));
         startWifiAttempt(now);
     }
     const bool configured = validWifiCredentials(globalVariables.SSID, globalVariables.APPW);
@@ -140,7 +144,8 @@ void wifiLoop(uint32_t now = millis()) {
     if (!configured || static_cast<uint32_t>(now - wifiRuntime.offlineSince) >= wifiRetryMs)
         startWifiPortal(now);
     if (configured && static_cast<uint32_t>(now - wifiRuntime.attemptStarted) >= wifiRetryMs) {
-        Serial.println(F("Wi-Fi unavailable; check network availability, signal and password. Retrying by SSID."));
+        if (debugLoggingEnabled())
+            Serial.println(F("Wi-Fi unavailable; check network availability, signal and password. Retrying by SSID."));
         startWifiAttempt(now);
     }
 }

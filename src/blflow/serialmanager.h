@@ -17,14 +17,8 @@ void serialLoop(){
         JsonDocument doc;
         deserializeJson(doc, input);
         if (doc.containsKey("ssid") && doc.containsKey("pass")) {
-            Serial.print(F("SSID "));
-            Serial.println(doc["ssid"].as<String>());
-            Serial.print(F("PASS "));
-            Serial.println(doc["pass"].as<String>());
-
-            Serial.println(doc["printerip"].as<String>());
-            Serial.println(doc["printercode"].as<String>());
-            Serial.println(doc["printerserial"].as<String>());
+            // A diagnostic message must not echo configuration credentials.
+            if (debugLoggingEnabled()) Serial.println(F("Received USB configuration"));
 
             strcpy(globalVariables.SSID, doc["ssid"]);
             strcpy(globalVariables.APPW, doc["pass"]);

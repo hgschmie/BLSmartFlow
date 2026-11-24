@@ -80,6 +80,32 @@ To install this release on a controller already stranded on **1.5.0**, connect i
 
 ### Development Notes
 
+#### Diagnosing Connection Outages
+
+Starting with 1.6.1, the serial console supports a `[boot]` identifier and reset reason, Wi-Fi association/disconnection events (including the ESP-IDF reason code), and periodic `[health]` lines. Health messages appear every five seconds as of 1.6.3 (previously every 15 seconds). In 1.6.4 and later, enable **Debugging** in Settings and save to receive routine diagnostic messages. Capture output across an outage with `pio device monitor -e esp32dev --filter esp32_exception_decoder`; keep the matching `build/esp32dev/firmware.elf` for decoding crash traces.
+
+The logging switches apply immediately after a successful Save and persist across restarts:
+
+| Setting | Serial output |
+| --- | --- |
+| Debugging | Master switch: five-second health reports, Wi-Fi/MQTT connection messages, and routine HTTP/configuration messages. |
+| Debug OnChange Events | Fan output percentage and active-mode changes, at most once per second. Requires Debugging. |
+| MQTT Logging | Filtered printer reports containing the temperature, fan, and print-state fields used by the controller. Requires Debugging. |
+
+Turning Debugging off disables the two detail controls in the page but retains their selections for the next time it is enabled. Boot/reset messages, the USB setup IP marker, recovery-hotspot instructions, storage/OTA failures, and ESP32 library errors remain visible. For example, the library's `request handler not found` message is an error independent of these switches. The read-only `/diagnostics` endpoint and its counters remain available with every switch off. Existing saved selections and defaults are preserved. Before 1.6.4, Debugging only printed the generic `Change from MQTT` message, Debug OnChange Events had no effect, and MQTT Logging operated independently; the new diagnostic logs in 1.6.1–1.6.3 were unconditional.
+
+While the controller is reachable, `curl --fail --show-error http://CONTROLLER_IP/diagnostics` returns the firmware version, boot identifier, uptime, controller MAC/IP, AP BSSID/channel/RSSI, Wi-Fi disconnect count and last reason, MQTT connection/report counters and operation age, heap usage, and maximum main-loop gap. No Wi-Fi password, printer access code, or printer serial number is included. Counters reset when the controller boots; `null` means there has not yet been a disconnect/report or Wi-Fi is unavailable. A disconnect event can also result from an intentional reconnect when saving Wi-Fi settings.
+
+- A changed boot identifier and restarted uptime indicate a reboot; `resetReason` describes why that boot occurred.
+- Increasing Wi-Fi disconnect counts identify a loss of association. The event is counted even if the main loop misses a brief outage, and logged when Debugging is enabled.
+- Continued health messages with increasing MQTT `pendingMs` identify unfinished MQTT work. Increasing `reports` shows that printer messages are still arriving.
+- With Debugging enabled throughout, a gap in health messages followed by a large `maxLoopGapMs` with the same boot identifier indicates a delayed main loop. The gap does not by itself identify the cause.
+- `request handler not found` is an HTTP routing message. The accompanying `[http]` line identifies the method and path, without submitted form data or query parameters.
+
+This instrumentation helps distinguish the causes of an outage; it does not itself change connection recovery or fan control.
+
+Starting with 1.6.2, health messages and `/diagnostics` also report Fan 1/Fan 2 output percentages, active modes (`temperature_curve`, `static`, `follow`, or `post_print`), and nozzle temperature. Follow mode includes the selected printer fan's reported percentage; Post Print includes its remaining seconds. These are **commanded PWM percentages**, not measured fan RPM. For example, `fan1=80%(follow:chamber=70%)` shows the printer's 70% input mapped to an 80% output. With Debugging and Debug OnChange Events enabled, `[fans]` messages log output or mode changes between health messages, at most once per second; faster changes may be coalesced. Reading diagnostics does not drive the outputs or change running timers.
+
 #### Firmware Versioning
 
 Versions use **major.feature.build**: the first number changes for a major overhaul, the middle number for feature additions, and the last number increments for every firmware build.

@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include "types.h"
 #include "post-print.h"
+#include "debug-log.h"
 
 // MQTT uses both JSON numbers and decimal strings. Reject malformed values
 // rather than converting them to zero and unexpectedly stopping an output.
@@ -57,7 +58,7 @@ inline bool parsePrinterReport(const uint8_t *payload, size_t length) {
         Serial.println(F("Deserialize error while parsing MQTT"));
         return false;
     }
-    if (printerConfig.mqttdebug) {
+    if (mqttLoggingEnabled()) {
         Serial.print(F("(Filtered) MQTT payload: "));
         serializeJson(message, Serial);
         Serial.println();

@@ -51,54 +51,62 @@ bool mqttDiscardResult = false;
 bool mqttTransportConnected = false;
 MqttOperation mqttPendingOperation = MqttOperation::Poll; // Main loop only.
 uint32_t mqttattempt = 0; // Time of the last completed attempt, not its start.
+// Main-loop diagnostics; never inspect the worker-owned socket from HTTP.
+uint32_t mqttWorkStarted = 0;
+uint32_t mqttConnectAttempts = 0, mqttConnections = 0, mqttReports = 0;
+uint32_t mqttLastReportAt = 0;
+int mqttLastState = -1;
 
 void ParseMQTTState(int code){
+    const char *message = "UNKNOWN STATE";
     switch (code)
     {
     case -4: // MQTT_CONNECTION_TIMEOUT
-        Serial.println(F("MQTT TIMEOUT"));
+        message = "TIMEOUT";
         printerVariables.errorcode = "no mqtt";
         break;
     case -3: // MQTT_CONNECTION_LOST
-        Serial.println(F("MQTT CONNECTION_LOST"));
+        message = "CONNECTION_LOST";
         printerVariables.errorcode = "no mqtt";
         break;
     case -2: // MQTT_CONNECT_FAILED
-        Serial.println(F("MQTT CONNECT_FAILED"));
+        message = "CONNECT_FAILED";
         printerVariables.errorcode = "no mqtt";
         break;
     case -1: // MQTT_DISCONNECTED
-        Serial.println(F("MQTT DISCONNECTED"));
+        message = "DISCONNECTED";
         printerVariables.errorcode = "no mqtt";
         break;
     case 0:  // MQTT_CONNECTED
-        Serial.println(F("MQTT CONNECTED"));
+        message = "CONNECTED";
         if (printerVariables.errorcode == "no mqtt"){
             //if this routine set the error code, clear it
             printerVariables.errorcode = "";
         }
         break;
     case 1:  // MQTT_CONNECT_BAD_PROTOCOL
-        Serial.println(F("MQTT BAD PROTOCOL"));
+        message = "BAD PROTOCOL";
         printerVariables.errorcode = "no mqtt";
         break;
     case 2:  // MQTT_CONNECT_BAD_CLIENT_ID
-        Serial.println(F("MQTT BAD CLIENT ID"));
+        message = "BAD CLIENT ID";
         printerVariables.errorcode = "no mqtt";
         break;
     case 3:  // MQTT_CONNECT_UNAVAILABLE
-        Serial.println(F("MQTT UNAVAILABLE"));
+        message = "UNAVAILABLE";
         printerVariables.errorcode = "no mqtt";
         break;
     case 4:  // MQTT_CONNECT_BAD_CREDENTIALS
-        Serial.println(F("MQTT BAD CREDENTIALS"));
+        message = "BAD CREDENTIALS";
         printerVariables.errorcode = "no mqtt";
         break;
     case 5: // MQTT UNAUTHORIZED
-        Serial.println(F("MQTT UNAUTHORIZED"));
+        message = "UNAUTHORIZED";
         printerVariables.errorcode = "no mqtt";
         break;
     }
+    if (debugLoggingEnabled())
+        Serial.printf("[mqtt uptime=%lus] MQTT %s\n", static_cast<unsigned long>(millis() / 1000), message);
 }
 
 MqttSettings currentMqttSettings() {
@@ -204,7 +212,11 @@ void scheduleMqtt(MqttOperation operation, const MqttSettings &settings = MqttSe
     request.settings = settings;
     // With one request in flight this queue has space. Never wait in loop().
     mqttWorkInFlight = xQueueSend(mqttRequests, &request, 0) == pdTRUE;
-    if (mqttWorkInFlight) mqttPendingOperation = operation;
+    if (mqttWorkInFlight) {
+        mqttPendingOperation = operation;
+        mqttWorkStarted = millis();
+        if (operation == MqttOperation::Connect) ++mqttConnectAttempts;
+    }
 }
 
 void setupMqtt() {
@@ -220,6 +232,10 @@ void mqttloop() {
     const bool wifiConnected = WiFi.status() == WL_CONNECTED;
     const MqttSettings settings = currentMqttSettings();
     if (!wifiConnected || !sameMqttSettings(settings, mqttConnectionSettings)) {
+        if (debugLoggingEnabled() && !mqttDiscardResult && (mqttWorkInFlight || mqttTransportConnected))
+            Serial.printf("[mqtt uptime=%lus] Closing connection: %s\n",
+                static_cast<unsigned long>(now / 1000),
+                wifiConnected ? "printer settings changed" : "Wi-Fi unavailable");
         printerCommunicationLost();
         fanloop();
         // A connect/read already in progress owns its socket until it returns.
@@ -232,7 +248,9 @@ void mqttloop() {
         if (xQueueReceive(mqttResults, &result, 0) != pdTRUE) return;
         mqttWorkInFlight = false;
         mqttTransportConnected = result.connected;
+        mqttLastState = result.state;
         if (result.operation == MqttOperation::Disconnect) {
+            if (debugLoggingEnabled()) Serial.println(F("[mqtt] Transport closed"));
             mqttDiscardResult = false;
             mqttTransportConnected = false;
             mqttattempt = now - mqttRetryMs;
@@ -243,10 +261,14 @@ void mqttloop() {
             printerVariables.online = true;
             printerVariables.disconnectMQTTms = 0;
             if (printerVariables.errorcode == "no mqtt") printerVariables.errorcode = "";
-            if (result.operation == MqttOperation::Connect) ParseMQTTState(0);
-            if (result.reportLength && parsePrinterReport(
-                    reinterpret_cast<const uint8_t *>(stream.get_buffer()), result.reportLength) && printerConfig.debuging) {
-                Serial.println(F("Change from MQTT"));
+            if (result.operation == MqttOperation::Connect) {
+                ++mqttConnections;
+                ParseMQTTState(0);
+            }
+            if (result.reportLength) {
+                ++mqttReports;
+                mqttLastReportAt = now;
+                parsePrinterReport(reinterpret_cast<const uint8_t *>(stream.get_buffer()), result.reportLength);
             }
         } else {
             printerCommunicationLost();
@@ -272,7 +294,7 @@ void mqttloop() {
     mqttattempt = now; // Also rate-limit worker allocation failures.
     if (!startMqttWorker()) return;
     mqttConnectionSettings = settings;
-    Serial.println(F("Connecting to mqtt in background..."));
+    if (debugLoggingEnabled()) Serial.println(F("Connecting to mqtt in background..."));
     scheduleMqtt(MqttOperation::Connect, settings);
 }
 
