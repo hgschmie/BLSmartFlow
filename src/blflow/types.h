@@ -14,6 +14,7 @@ extern "C"
     typedef struct PrinterVaraiblesStruct{
         PrinterFanReading fans[printerFanCount];
         double nozzletemp = 0;
+        bool nozzleKnown = false;
         bool online = false;
         bool printWasRunning = false;
         PostPrintRun postPrint[2];

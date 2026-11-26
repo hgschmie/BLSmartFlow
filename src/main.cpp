@@ -50,6 +50,8 @@ void loop(){
     diagnosticsLoop();
     wifiLoop();
     fanloop();
+    telemetryHistory.sample(esp_timer_get_time() / 1000000, printerVariables.online && printerVariables.nozzleKnown,
+        printerVariables.nozzletemp, globalVariables.fanSpeed, globalVariables.fanSpeed2);
     webserverloop();
     mqttloop();
     indicatorloop();

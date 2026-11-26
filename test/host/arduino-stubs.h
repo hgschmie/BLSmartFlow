@@ -217,7 +217,10 @@ constexpr int HTTP_POST=1, HTTP_GET=2;
 constexpr int UPLOAD_FILE_START=1, UPLOAD_FILE_WRITE=2, UPLOAD_FILE_END=3;
 constexpr size_t UPDATE_SIZE_UNKNOWN=0;
 struct HTTPUpload { int status=0; String filename; uint8_t* buf=nullptr; size_t currentSize=0,totalSize=0; };
+constexpr size_t CONTENT_LENGTH_UNKNOWN = SIZE_MAX;
 struct WebServer {
+    void setContentLength(size_t) {}
+    void sendContent(const String &data) { lastBody += data; }
     std::map<std::string,String> params;
     std::map<std::string,String> headers;
     std::vector<int> responses;

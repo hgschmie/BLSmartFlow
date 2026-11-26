@@ -5,40 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BL Smart Flow+ — Wi-Fi Setup</title>
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
-  <style>
-    :root { color-scheme: dark; font-family: Arial, sans-serif; }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: #171b20; color: #f5f6f7; line-height: 1.5; }
-    main { max-width: 720px; margin: 6vh auto; padding: 24px; }
-    h1 { font-size: 1.8rem; margin: 0 0 8px; }
-    h2 { font-size: 1.35rem; margin-top: 0; }
-    p { color: #c5cbd2; }
-    section { background: #242b33; border: 1px solid #3d4753; border-radius: 14px; padding: 24px; margin-top: 24px; }
-    label { display: block; font-size: 1.15rem; margin-bottom: 8px; }
-    input:not([type=checkbox]) { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #73808e; border-radius: 6px; background: #171b20; color: white; font-size: 1rem; }
-    .field { margin-bottom: 20px; }
-    .hint { font-size: .9rem; margin: 6px 0 0; }
-    .check { display: flex; gap: 10px; align-items: center; font-size: 1rem; }
-    .check input { width: 20px; height: 20px; }
-    button { min-height: 44px; padding: 10px 18px; border: 0; border-radius: 6px; background: #3192ee; color: white; font-size: 1rem; cursor: pointer; }
-    button:disabled { opacity: .5; cursor: default; }
-    a { color: #8bc8ff; overflow-wrap: anywhere; }
-    #saveStatus { min-height: 1.5em; }
-    #connectionStatus { margin-top: 0; }
-    footer { margin-top: 24px; font-size: .75rem; color: #aeb8c4; }
-    @media (max-width: 480px) { main { margin: 16px auto; padding: 16px; } section { padding: 18px; } }
-  </style>
-</head>
+  <link rel="stylesheet" href="/theme.css"><style>
+  .field { margin: 16px 0; } .field label { display:block; font-weight:600; margin-bottom:4px; }
+  .field input:not([type=checkbox]) { width: min(100%, 30rem); } .field label.check { display:flex; align-items:center; gap:.5rem; margin-bottom:18px; }
+  .panel { margin-bottom:16px; } .hint { margin:6px 0; }
+  a { color: var(--green); } button:disabled { opacity:.5; } #saveStatus:empty { display:none; }
+  .embedded .mast, .embedded footer { display:none; } .embedded .frame { width:100%; }
+  </style></head>
 <body>
-<main>
-  <h1>BL Smart Flow+</h1>
-  <p>Wi-Fi setup</p>
-  <section aria-label="Connection status">
+<main class="frame"><header class="mast"><div class="brand"><span class="brand-mark" aria-hidden="true"><img src="/fan_shell.png" alt=""><img src="/fan_blades.png" alt=""></span>BL Smart Flow+</div><nav aria-label="Main navigation"><a href="/dashboard" data-tab="dashboardTab">Dashboard</a><a href="/settings" data-tab="toggleTab">Settings</a><a href="/fans" data-tab="fanGraphTab">Fans</a><a aria-current="page" href="/wifi" data-tab="wifiTab">WiFi</a></nav></header>
+  <div class="headline"><h1>WiFi Setup</h1></div>
+  <section class="panel" aria-label="Connection status">
     <p id="connectionStatus" role="status">Loading connection status…</p>
-    <p id="connectedHelp" hidden>Reconnect your phone or computer to your home network, then open <a id="controllerLink">the controller</a>. The setup hotspot closes after one minute connected.</p>
+    <p id="connectedHelp" hidden>Reconnect your phone or computer to your home network, then open <a id="controllerLink" target="_top">the controller</a>. The setup hotspot closes after one minute connected.</p>
     <p class="hint">Your printer settings, fan curves and fan modes are kept.</p>
   </section>
-  <section>
+  <section class="panel">
     <h2>Connect to your Wi-Fi</h2>
     <p>Use your 2.4 GHz network name and password. You can keep this page open while the controller reconnects.</p>
     <form id="wifiForm">
@@ -54,14 +36,21 @@
       <div class="field">
         <label class="check"><input id="openNetwork" type="checkbox" disabled>Open network (no password)</label>
       </div>
-      <button id="saveButton" type="submit" disabled>Save and connect</button>
+      <button class="primary" id="saveButton" type="submit" disabled>Save and connect</button>
       <p id="saveStatus" role="status"></p>
     </form>
-    <a href="/fans">Fan control and printer settings</a>
+
   </section>
   <footer id="firmwareVersion"></footer>
 </main>
 <script>
+  if (window.self !== window.top) {
+    document.documentElement.classList.add("embedded");
+    const frame = document.querySelector('.frame');
+    new ResizeObserver(() => {
+      if (frame.offsetHeight) window.frameElement.style.height = frame.offsetHeight + 'px';
+    }).observe(frame);
+  }
   const get = id => document.getElementById(id);
   let loaded = false;
   let saving = false;
@@ -80,13 +69,13 @@
       }
       get('saveButton').disabled = saving;
       get('firmwareVersion').textContent = state.firmwareversion;
-      get('connectedHelp').hidden = !state.connected;
+      get('connectedHelp').hidden = !(state.connected && state.apActive);
       get('connectionStatus').textContent = state.connected
         ? `Connected to ${state.ssid}.`
-        : state.ssid ? `Not connected to ${state.ssid}. Retrying automatically; check the network name, availability and password.`
+        : state.ssid ? `Not connected to ${state.ssid}. Retrying automatically. Check the network name and password.`
         : 'No Wi-Fi network is configured. Enter your network details below.';
       if (state.connected) {
-        get('controllerLink').href = `http://${state.ip}/fans`;
+        get('controllerLink').href = `http://${state.ip}/dashboard`;
         get('controllerLink').textContent = `http://${state.ip}/`;
       }
     } catch (error) {

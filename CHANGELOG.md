@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.0 — 2026-11-25
+
+- Added a default Dashboard with live nozzle temperature and commanded output history for both fans. Choose five minutes, one hour, six hours, or 24 hours. History is sampled on the controller and resets on reboot.
+- Moved printer credentials and debugging to Settings, and put fan synchronization, operating modes, Post Print timers, and both curve editors on the Fans tab. Each tab saves its own settings.
+- Kept both fan indicators and Post Print cancellation on the Dashboard. Restyled the four tabs and Wi-Fi recovery page, and bundled the graphs and fan artwork for offline use.
+
 ## 1.6.4 — 2026-11-23
 
 - Consolidated routine serial diagnostics under the existing Debugging switch. It now controls five-second health reports, Wi-Fi/MQTT connection events, and routine HTTP/configuration messages; `/diagnostics` and its counters remain available when logging is off.

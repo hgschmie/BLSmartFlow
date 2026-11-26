@@ -7,7 +7,7 @@ const vm = require('node:vm');
 
 const html = readFileSync(join(__dirname, '../src/www/fanpage.html'), 'utf8');
 const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
-  .map(match => match[1]).find(script => script.includes('function updateOptions()'));
+  .map(match => match[1]).find(script => script.includes('function updateOptions('));
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const copy = value => JSON.parse(JSON.stringify(value));
 const points1 = [{ temp: 0, speed: 0 }, { temp: 200, speed: 60 }, { temp: 400, speed: 100 }];
@@ -85,7 +85,7 @@ function loadPage({ chartAvailable = true } = {}) {
       }
     },
     state: name => JSON.parse(vm.runInContext(`JSON.stringify(${name})`, context)),
-    trigger(id, event) { elements.get(id).listeners[event]({ preventDefault() {} }); },
+    trigger(id, event) { elements.get(id).listeners[event]({ target:elements.get(id), preventDefault() {} }); },
     pending(url) { const request = fetches.find(request => request.url === url && !request.done); assert.ok(request, `No pending ${url}`); return request; },
     async respond(url, body, status = 200) {
       const request = this.pending(url); request.done = true;
@@ -117,7 +117,7 @@ test('Debugging controls both detail switches and preserves their preferences wh
   assert.equal(page.get('mqttdebug').disabled, false);
   page.get('debuging').checked = false;
   page.trigger('debuging', 'change');
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'settings');
   const parameters = new URLSearchParams(page.requests.at(-1).body);
   assert.equal(parameters.get('debuging'), 'off');
   assert.equal(parameters.get('debugingchange'), 'on');
@@ -148,7 +148,7 @@ test('legacy options default to one synchronized curve and feature section', asy
   assert.equal(page.get('fan2Features').hidden, true);
   assert.equal(page.get('fan1FeaturesTitle').hidden, true);
   assert.equal(page.get('fan1FeaturesTitle').textContent, '');
-  assert.equal(page.get('fan2Indicator').hidden, true);
+  assert.equal(page.get('fan2Indicator').hidden, false);
   assert.equal(page.charts[0].data.datasets.length, 1);
   assert.equal(page.charts[0].data.datasets[0].label, 'Both fans');
   assert.equal(page.get('followPrinterFan').checked, false);
@@ -194,7 +194,7 @@ test('following is saved separately for each Fan and labels change only after su
   assert.equal(page.get('fan1Source').textContent, '');
   assert.equal(page.get('fan2Source').hidden, false);
   assert.equal(page.get('fan2Source').textContent, '');
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   const body = new URLSearchParams(page.requests[1].body);
   assert.equal(body.get('followPrinterFan'), 'on');
   assert.equal(body.get('printerFanSource'), 'chamber');
@@ -216,14 +216,14 @@ test('following can be turned off explicitly and a failed save retains the activ
   assert.equal(page.get('fan1Source').textContent, 'Auxiliary Fan');
   page.get('followPrinterFan').checked = false;
   page.trigger('followPrinterFan', 'change');
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   const body = new URLSearchParams(page.requests[1].body);
   assert.equal(body.get('followPrinterFan'), 'off');
   assert.equal(body.get('staticfan'), 'off');
   page.requests[1].respond(500, 'Flash write failed');
   assert.equal(page.get('fan1Source').textContent, 'Auxiliary Fan');
   assert.equal(page.get('fan1Source').hidden, false);
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   page.requests[2].respond(200, 'Saved');
   page.requests[3].respond(200, JSON.stringify(baseConfig));
   assert.equal(page.get('fan1Source').hidden, false);
@@ -240,7 +240,7 @@ test('first independent draft copies follow settings and sync saves preserve dor
   page.get('printerFanSource2').value = 'heatbreak';
   page.get('fansSynchronized').checked = true;
   page.trigger('fansSynchronized', 'change');
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   const body = new URLSearchParams(page.requests[1].body);
   assert.equal(body.has('followPrinterFan2'), false);
   assert.equal(body.has('printerFanSource2'), false);
@@ -251,7 +251,7 @@ test('synchronized indicators use Fan 1 and retain saved Fan 2 follow settings',
   const page = await readyPage({ ...baseConfig, fansSynchronized: true, fan2Configured: true,
     followPrinterFan: true, printerFanSource: 'chamber', followPrinterFan2: true, printerFanSource2: 'part' });
   assert.equal(page.get('fan1Source').textContent, 'Chamber Fan');
-  assert.equal(page.get('fan2Indicator').hidden, true);
+  assert.equal(page.get('fan2Indicator').hidden, false);
   page.get('fansSynchronized').checked = false;
   page.trigger('fansSynchronized', 'change');
   assert.equal(page.get('followPrinterFan2').checked, true);
@@ -272,7 +272,7 @@ test('mixed follow modes retain an empty source row for the other Fan', async ()
 
 test('submitting before settings arrive cannot overwrite saved credentials', () => {
   const page = loadPage(); let prevented = false;
-  assert.equal(page.context.submitOptions({ preventDefault() { prevented = true; } }), false);
+  assert.equal(page.context.submitOptions({ preventDefault() { prevented = true; } }, 'settings'), false);
   assert.equal(prevented, true); assert.equal(page.requests.length, 1);
 });
 
@@ -304,11 +304,11 @@ test('independent mode is only applied after successful settings save and reload
   assert.equal(page.get('fan2Features').hidden, false);
   assert.equal(page.get('staticfan2').checked, true);
   assert.equal(page.get('staticfanspeed2').value, '37');
-  assert.equal(page.get('fan2Indicator').hidden, true);
+  assert.equal(page.get('fan2Indicator').hidden, false);
   assert.equal(page.charts[0].data.datasets.length, 1);
   assert.equal(page.get('createPointBtn1').disabled, true);
-  assert.match(page.get('mode-status').textContent, /save settings/i);
-  page.context.submitOptions({ preventDefault() {} });
+  assert.match(page.get('mode-status').textContent, /save fan settings/i);
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   const body = new URLSearchParams(page.requests[1].body);
   assert.equal(body.get('fansSynchronized'), 'off');
   assert.equal(body.get('staticfan2'), 'on');
@@ -329,7 +329,7 @@ test('returning to synchronized mode omits hidden Fan 2 settings without clearin
   assert.equal(page.get('fansSynchronized').checked, false);
   page.get('fansSynchronized').checked = true; page.trigger('fansSynchronized', 'change');
   assert.equal(page.get('fan2Features').hidden, true);
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   const body = new URLSearchParams(page.requests[1].body);
   assert.equal(body.get('fansSynchronized'), 'on');
   assert.equal(body.has('staticfan2'), false); assert.equal(body.has('staticfanspeed2'), false);
@@ -345,20 +345,20 @@ test('returning to synchronized mode omits hidden Fan 2 settings without clearin
 test('a failed settings save retains the active synchronized view and shows the error', async () => {
   const page = await readyPage();
   page.get('fansSynchronized').checked = false; page.trigger('fansSynchronized', 'change');
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   page.requests[1].respond(500, 'Failed to save settings to flash');
-  assert.match(page.get('settings-status').textContent, /failed to save/i);
-  assert.equal(page.get('fan2Indicator').hidden, true);
+  assert.match(page.get('fans-status').textContent, /failed to save/i);
+  assert.equal(page.get('fan2Indicator').hidden, false);
   assert.equal(page.charts[0].data.datasets.length, 1);
   assert.equal(page.get('saveOptions').disabled, false);
   assert.equal(page.get('save-notice').hidden, true);
   page.advanceTime(5000);
-  assert.match(page.get('settings-status').textContent, /failed to save/i);
+  assert.match(page.get('fans-status').textContent, /failed to save/i);
 });
 
 test('settings save shows a temporary notice that survives reloading settings', async () => {
   const page = await readyPage();
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'settings');
   page.requests[1].respond(200, 'Settings saved');
   assert.equal(page.get('save-notice').textContent, 'Settings saved successfully.');
   assert.equal(page.get('save-notice').hidden, false);
@@ -567,7 +567,7 @@ test('unsaved mode or source changes block both editors until saved and reloaded
   assert.equal(page.get('createPointBtn1').disabled, true);
   assert.equal(page.get('createPointBtn2').disabled, true);
   assert.equal(page.charts[0].options.scales.x.max, 400);
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   page.requests[1].respond(200, 'Saved');
   page.requests[2].respond(200, JSON.stringify({ ...separateConfig, followPrinterFan: true, printerFanSource: 'chamber' }));
   await page.respond('/getFanConfig', { points: points1, points2, fansSynchronized: false,
@@ -614,7 +614,7 @@ test('Post Print saves independent values and explicitly saves Off without alter
   page.trigger('postPrint', 'change');
   page.get('postPrintSeconds2').value = '120';
   page.get('postPrintSpeed2').value = '0';
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   const body = new URLSearchParams(page.requests[1].body);
   assert.equal(body.get('postPrint'), 'off');
   assert.equal(body.get('followPrinterFan'), 'on');
@@ -623,7 +623,7 @@ test('Post Print saves independent values and explicitly saves Off without alter
   assert.equal(body.get('postPrintSpeed2'), '0');
   page.requests[1].respond(500, 'Flash write failed');
   assert.equal(page.get('fan1Source').textContent, 'Chamber Fan');
-  assert.match(page.get('settings-status').textContent, /Flash write failed/);
+  assert.match(page.get('fans-status').textContent, /Flash write failed/);
 });
 
 test('first split clones Post Print and synchronization omits all dormant Fan 2 inputs', async () => {
@@ -637,7 +637,7 @@ test('first split clones Post Print and synchronization omits all dormant Fan 2 
   page.get('postPrintSeconds2').value = '45';
   page.get('fansSynchronized').checked = true;
   page.trigger('fansSynchronized', 'change');
-  page.context.submitOptions({ preventDefault() {} });
+  page.context.submitOptions({ preventDefault() {} }, 'fans');
   const body = new URLSearchParams(page.requests[1].body);
   for (const name of ['postPrint2', 'postPrintSeconds2', 'postPrintSpeed2']) {
     assert.equal(body.has(name), false);

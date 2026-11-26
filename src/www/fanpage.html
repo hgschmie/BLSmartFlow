@@ -1,638 +1,303 @@
 <!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BL Smart Flow+</title>
-  <link rel="icon" href="/favicon.ico" type="image/x-icon">
-  <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    :root {
-      --color-black: black;
-      --color-cod-gray: #101010;
-      --color-white: white;
-      --color-error: rgb(191, 95, 95);
-      --color-primary: rgb(68, 100, 136);
-      --panel-max-width: 800px;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      background-color: var(--color-black);
-      font-family: Arial, sans-serif;
-      color: var(--color-white);
-    }
-
-    #particleCanvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: -1;
-      background: rgb(28, 75, 114);
-    }
-
-    .container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem 1rem;
-      max-width: 1200px;
-      width: 100%;
-    }
-
-    .logo-container {
-      display: flex;
-      align-items: center;
-      margin-bottom: 1rem;
-    }
-
-    .logo-text {
-      font-size: 2rem;
-      font-weight: bold;
-      color: var(--color-white);
-      text-shadow: 1px 1px var(--color-black);
-    }
-
-    .fan-stack {
-      position: relative;
-      display: inline-block;
-      width: 80px;
-      height: 80px;
-      margin-right: 20px;
-      overflow: hidden;
-      padding: 0;
-      border: 0;
-      background: transparent;
-    }
-
-    .fan-stack img {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 80px;
-      height: 80px;
-      object-fit: contain;
-    }
-
-    .fanshell {
-      z-index: 1;
-    }
-
-    .fanblades {
-      z-index: 2;
-      transform-origin: 50% 50%;
-    }
-
-    @keyframes spin {
-      0% {
-        transform: rotate(0deg);
-      }
-      100% {
-        transform: rotate(360deg);
-      }
-    }
-
-    [hidden] { display: none !important; }
-    .logo-container { flex-wrap: wrap; justify-content: center; gap: 1rem; }
-    .fan-indicator { text-align: center; }
-    .fan-indicator .fan-stack { display: block; margin: 0 auto .35rem; }
-    .fan-label { display: block; font-size: .85rem; }
-    .fan-source { color: var(--color-white); margin-top: .2rem; min-height: 1.2em; line-height: 1.2; white-space: nowrap; }
-    .fan-one { color: #73b9ff; }
-    .fan-two { color: #ffbe70; }
-    #settings-fields { border: 0; padding: 0; min-width: 0; width: 100%; }
-    #settings-form { width: 100%; }
-    .printer-information { margin: 1rem 0 1.5rem; }
-    .printer-information h2 { margin-bottom: 1.25rem; }
-    .printer-option-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 18rem); align-items: center; gap: .5rem 1rem; margin: .75rem 0; }
-    .printer-option-row input[type=text] { width: 100%; min-width: 0; padding: .45rem .6rem; margin: 0; font-family: inherit; font-size: revert; }
-    .fan-features { margin: 1rem 0; }
-    .fan-option-row { display: grid; grid-template-columns: 60px minmax(0, 1fr) max-content; align-items: center; gap: .5rem .75rem; margin: .75rem 0; }
-    .fan-option-row > label[for], .printer-option-row > label { width: auto; min-width: 0; font-size: 1.1475rem; }
-    #settings-fields .switch { width: 60px; flex: 0 0 60px; margin: 0; }
-    .fan-parameters { justify-self: end; }
-    .static-speed-values, .post-print-values { display: flex; align-items: center; justify-content: flex-end; gap: .35rem; }
-    .static-speed-row input[type=number], .post-print-values input { width: calc(3ch + 1.75rem); padding: .4rem .3rem; min-width: 0; flex-shrink: 0; }
-    .follow-fan-row select { width: 11rem; max-width: 100%; min-width: 0; padding: .4rem; font-size: .9rem; }
-    .post-print-values { font-size: .9rem; }
-    .post-print-values input[name^=postPrintSeconds] { width: calc(4ch + 1.75rem); }
-    #firmwareversion { font-size: .75rem; width: 100%; max-width: var(--panel-max-width); text-align: left; margin-top: 1.5rem; }
-    @media (max-width: 540px) {
-      .printer-option-row { grid-template-columns: minmax(0, 1fr); }
-      .fan-option-row { grid-template-columns: 60px minmax(0, 1fr); }
-      .fan-parameters { grid-column: 1 / -1; max-width: 100%; }
-    }
-    #settings-status, #curve-status, #mode-status, .curve-status { margin: .6rem 0; font-size: .9rem; }
-    #save-notice {
-      position: fixed;
-      top: 1.5rem;
-      right: 1.5rem;
-      z-index: 10;
-      max-width: calc(100% - 3rem);
-      padding: .85rem 1.2rem;
-      border-radius: 8px;
-      background: #236139;
-      color: var(--color-white);
-      box-shadow: 0 3px 12px rgba(0, 0, 0, .3);
-      text-align: center;
-      pointer-events: none;
-    }
-    button:disabled, input:disabled { cursor: default; opacity: .55; }
-    .fan-stack:disabled { opacity: 1; }
-    .fan-stack:not(:disabled) { cursor: pointer; }
-    .fan-stack:not(:disabled):hover, .fan-stack:focus-visible { outline: 2px solid white; outline-offset: 4px; border-radius: 4px; }
-    #fan-action-status { margin: 0 0 1rem; text-align: center; }
-    #fan-action-status:empty { display: none; }
-    .connection-status { display: flex; align-items: baseline; gap: .5rem; max-width: 100%; margin: 0 0 1rem; padding: .5rem .75rem; border: 1px solid rgba(255,255,255,.3); border-radius: 8px; background: rgba(0,0,0,.15); font-size: .9rem; line-height: 1.4; }
-    .connection-dot { width: .55rem; height: .55rem; flex-shrink: 0; border-radius: 50%; background: #c6d4e0; }
-    .connection-status.connected .connection-dot { background: #82e6a6; }
-    .connection-status.disconnected .connection-dot { background: #ffbe70; }
-    .graph-status { width: 100%; max-width: var(--panel-max-width); }
-    .graph-description { margin: .75rem 0 1rem; max-width: 500px; font-size: .9rem; line-height: 1.5; }
-    #fanGraphTab { gap: 1.25rem; }
-    .telemetry { margin-top: 1rem; }
-    .fangraph-container { width: 100%; }
-    @media (max-width: 400px) {
-      .toggles-container, .fangraph-container { padding: 12px; }
-      .container { padding: 1rem .5rem; }
-    }
-
-    /* TABS */
-    .tabs {
-      display: flex;
-      gap: 1rem;
-      margin-bottom: 1rem;
-    }
-    .tab-btn {
-      padding: 0.5rem 1rem;
-      cursor: pointer;
-      border: none;
-      border-radius: 5px;
-      background-color: var(--color-white);
-      color: var(--color-black);
-      transition: background 0.3s;
-    }
-    .tab-btn:hover {
-      background-color: rgb(186, 215, 255);
-    }
-    .tab-btn.active {
-      background-color: rgb(56, 137, 229);
-      color: rgb(255, 255, 255);
-      font-weight: bold;
-    }
-
-    /* TAB CONTENT */
-    .tab-content {
-      display: none;
-      width: 100%;
-    }
-    .tab-content.active {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    /*Options Tab) */
-
-    form label {
-      width: 100%;
-      font-weight: bold;
-      font-size: 16px;
-      color: #333;
-    }
-
-    form input[type='text'] {
-      width: 100%;
-      padding: 10px;
-      border-radius: 5px;
-      border: 1px solid #ccc;
-      margin-bottom: 20px;
-      font-size: 16px;
-    }
-
-    form input[type='submit'] {
-      background-color: rgb(56, 137, 229);
-      color: rgb(255, 255, 255);
-      font-weight: bold;
-
-      margin: .15rem;
-      padding: 0.5rem 1rem;
-      cursor: pointer;
-      border: none;
-      border-radius: 5px;
-      transition: background 0.3s;
-    }
-
-    /*CHART WRAPPER (Fan Graph Tab) */
-    .fangraph-container {
-      background-color: var(--color-white);
-      color: var(--color-black);
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      max-width: var(--panel-max-width);
-    }
-
-    .chart-container {
-      width: 500px;
-      max-width: 100%;
-      margin: 0 auto 2rem;
-      text-align: center;
-    }
-    .chart-container canvas {
-      max-width: 100%;
-      height: auto;
-    }
-
-    .controls {
-      width: 100%;
-      max-width: 500px;
-      margin: 0 auto;
-      text-align: left;
-      border: 1px solid #ccc;
-      padding: 1em;
-      border-radius: 8px;
-    }
-    .controls h2 {
-      margin-top: 0;
-      margin-bottom: 0.5em;
-    }
-    .controls label {
-      display: inline-block;
-      width: 190px;
-      max-width: 100%;
-      margin-bottom: 0.5em;
-    }
-    .controls select { max-width: 100%; padding: .25rem; }
-    .controls input[type="number"] {
-      width: 100px;
-      margin-right: 10px;
-    }
-    .controls button {
-      margin-top: 1em;
-      padding: 0.5em 1em;
-      cursor: pointer;
-      border: none;
-      border-radius: 5px;
-      background: var(--color-primary);
-      color: var(--color-white);
-      transition: background 0.3s;
-    }
-    .controls button:hover {
-      background: rgb(119, 152, 190);
-    }
-    .controls .section {
-      margin-bottom: 1.5em;
-    }
-
-    /* TOGGLE BUTTONS (Second Tab) */
-    .toggles-container {
-      background-color: var(--color-white);
-      color: var(--color-black);
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-      max-width: var(--panel-max-width);
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 1rem;
-    }
-
-    /* A simple switch style (optional) */
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 60px;
-      height: 34px;
-      margin: .15rem;
-    }
-
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #ccc;
-      transition: 0.4s;
-      border-radius: 34px;
-    }
-
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 26px;
-      width: 26px;
-      left: 4px;
-      bottom: 4px;
-      background-color: white;
-      transition: 0.4s;
-      border-radius: 50%;
-    }
-
-    input:checked + .slider {
-      background-color: var(--color-primary);
-    }
-
-    input:checked + .slider:before {
-      transform: translateX(26px);
-    }
-    input:focus-visible + .slider { outline: 2px solid #1565c0; outline-offset: 3px; }
-    input:disabled + .slider { cursor: default; opacity: .55; }
-
-    .switch-with-label {
-      display: flex;
-      align-items: center;
-      gap: .75rem;
-    }
-    .labeled-switch {
-      gap: .5rem;
-      margin: .5rem 0;
-    }
-    .synchronization-row { display: flex; align-items: center; gap: .75rem; }
-    .synchronization-row > label[for] { width: auto; min-width: 0; font-size: 1.5rem; color: inherit; }
-    .switch-with-label .switch { width: 60px; flex: 0 0 60px; margin: .15rem; }
-    .toggle-label {
-      font-size: 1rem;
-      user-select: none;
-    }
-  </style>
-</head>
-
-<body>
-  <canvas id="particleCanvas"></canvas>
-
-  <!-- Main Container -->
-  <div class="container">
-
-    <div class='logo-container'>
-
-      <div id="fan1Indicator" class="fan-indicator">
-        <button id="fanButton1" type="button" class="fan-stack" aria-label="Fan 1" disabled>
-          <img class="fanshell" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_shell.png" alt="Fan 1 shell">
-          <img id="blades1" class="fanblades" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_blades.png" alt="">
-        </button>
-        <span class="fan-label"><span id="fan1Label">Both fans</span>: <span id="fan1Percent">-</span>%</span>
-        <span id="fan1Source" class="fan-label fan-source"></span>
-      </div>
-      <div id="fan2Indicator" class="fan-indicator" hidden>
-        <button id="fanButton2" type="button" class="fan-stack" aria-label="Fan 2" disabled>
-          <img class="fanshell" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_shell.png" alt="Fan 2 shell">
-          <img id="blades2" class="fanblades" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_blades.png" alt="">
-        </button>
-        <span class="fan-label"><span class="fan-two">Fan 2</span>: <span id="fan2Percent">-</span>%</span>
-        <span id="fan2Source" class="fan-label fan-source"></span>
-      </div>
-      <span class='logo-text'>BL Smart Flow+</span>
-    </div>
-    <p id="printer-connection" class="connection-status" role="status" aria-live="polite">
-      <span class="connection-dot" aria-hidden="true"></span>
-      <span id="printer-connection-text">Printer: Checking connection…</span>
-    </p>
-    <p id="fan-action-status" role="alert"></p>
-
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="toggleTab">Settings</button>
-      <button class="tab-btn" data-tab="fanGraphTab">Fan Graph</button>
-    </div>
-
-    <div id="fanGraphTab" class="tab-content">
-      <div class="graph-status">
-        <p id="mode-status" role="status"></p>
-        <p id="curve-status" role="status">Loading fan curves...</p>
-        <button id="retryCurves" hidden>Retry loading curves</button>
-      </div>
-      <section id="graphPanel1" class="fangraph-container" aria-labelledby="graphTitle1">
-        <h2 id="graphTitle1">Fan 1</h2>
-        <p id="graphDescription1" class="graph-description"></p>
-        <div class="chart-container">
-          <canvas id="myChart1" role="img" aria-label="Fan 1 curve"></canvas>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BL Smart Flow+</title>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <script defer src="/chart.js"></script>
+    <link rel="stylesheet" href="/theme.css">
+  </head>
+  <body>
+    <main class="container">
+      <header class="mast">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"><img src="/fan_shell.png" alt=""><img src="/fan_blades.png" alt=""></span>BL Smart Flow+</div>
+        <nav aria-label="Main navigation"><a href="/dashboard" data-tab="dashboardTab">Dashboard</a><a href="/settings" data-tab="toggleTab">Settings</a><a href="/fans" data-tab="fanGraphTab">Fans</a><a href="/wifi" data-tab="wifiTab">WiFi</a>
+        </nav>
+      </header>
+      <section id="dashboardTab" class="tab-content active">
+        <div class="headline">
+          <h1>Dashboard</h1><p id="printer-connection" class="connection-status" role="status" aria-live="polite">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="printer-connection-text">Printer: Checking connection…</span>
+          </p>
         </div>
-        <div class="controls">
-          <h2>Manage Data Points</h2>
-          <p id="curve-status1" class="curve-status" role="status"></p>
-          <label for="pointSelect1">Select point:</label>
-          <select id="pointSelect1" aria-label="Fan 1 curve point" disabled><option value="">Choose a point…</option></select>
-          <div class="section">
-            <button id="createPointBtn1" disabled>Create New Point</button>
+        <div class="fan-strip">
+          <div id="fan1Indicator" class="fan-indicator">
+            <button id="fanButton1" type="button" class="fan-stack" aria-label="Fan 1" disabled>
+            <img class="fanshell" src="/fan_shell.png" alt="Fan 1 shell">
+            <img id="blades1" class="fanblades" src="/fan_blades.png" alt="">
+            </button>
+            <span class="fan-label"><span id="fan1Label">Fan 1</span>: <span id="fan1Percent">-</span>%</span>
+            <span id="fan1Source" class="fan-label fan-source"></span>
           </div>
-          <div class="section" id="editSection1" style="display:none;">
-            <h3 id="pointHeading1">Selected Point</h3>
-            <label id="inputLabel1" for="edit-input1">Nozzle temperature (°C):</label>
-            <input id="edit-input1" type="number" min="0" max="400" step="any">
-            <br/>
-            <label for="edit-speed1">Fan speed (%):</label>
-            <input id="edit-speed1" type="number" min="0" max="100" step="1">
-            <br/>
-            <button id="editPointBtn1">Change</button>
-            <button id="removePointBtn1" style="background: var(--color-error);">Remove</button>
+          <div id="fan2Indicator" class="fan-indicator">
+            <button id="fanButton2" type="button" class="fan-stack" aria-label="Fan 2" disabled>
+            <img class="fanshell" src="/fan_shell.png" alt="Fan 2 shell">
+            <img id="blades2" class="fanblades" src="/fan_blades.png" alt="">
+            </button>
+            <span class="fan-label"><span class="fan-two">Fan 2</span>: <span id="fan2Percent">-</span>%</span>
+            <span id="fan2Source" class="fan-label fan-source"></span>
           </div>
+        </div><p id="fan-action-status" role="alert"></p>
+        <div class="history-heading">
+          <h2>History</h2><select aria-label="History range" id="historyRange"><option value="5m">Last five minutes</option><option value="1h">Last hour</option><option value="6h">Last six hours</option><option value="24h">Last 24 hours</option></select>
         </div>
-        <div class="section telemetry">
-          <div id="sensorInput1">Nozzle temperature: —</div>
-          <div>Output: <span id="speedValue1">—</span> %</div>
-        </div>
+        <p id="history-status" role="status"></p>
+        <article class="panel history-card">
+          <header>
+            <h2>Nozzle temperature</h2><output id="reading0">—</output>
+          </header>
+          <div class="plot"><canvas id="history0" role="img" aria-label="Nozzle temperature over time"></canvas>
+          </div>
+        </article>
+        <article class="panel history-card">
+          <header>
+            <h2>Fan 1 speed</h2><output id="reading1">—</output>
+          </header>
+          <div class="plot"><canvas id="history1" role="img" aria-label="Fan 1 speed over time"></canvas>
+          </div>
+        </article>
+        <article class="panel history-card">
+          <header>
+            <h2>Fan 2 speed</h2><output id="reading2">—</output>
+          </header>
+          <div class="plot"><canvas id="history2" role="img" aria-label="Fan 2 speed over time"></canvas>
+          </div>
+        </article>
       </section>
-      <section id="graphPanel2" class="fangraph-container" aria-labelledby="graphTitle2" hidden>
-        <h2 id="graphTitle2">Fan 2</h2>
-        <p id="graphDescription2" class="graph-description"></p>
-        <div class="chart-container">
-          <canvas id="myChart2" role="img" aria-label="Fan 2 curve"></canvas>
-        </div>
-        <div class="controls">
-          <h2>Manage Data Points</h2>
-          <p id="curve-status2" class="curve-status" role="status"></p>
-          <label for="pointSelect2">Select point:</label>
-          <select id="pointSelect2" aria-label="Fan 2 curve point" disabled><option value="">Choose a point…</option></select>
-          <div class="section">
-            <button id="createPointBtn2" disabled>Create New Point</button>
-          </div>
-          <div class="section" id="editSection2" style="display:none;">
-            <h3 id="pointHeading2">Selected Point</h3>
-            <label id="inputLabel2" for="edit-input2">Nozzle temperature (°C):</label>
-            <input id="edit-input2" type="number" min="0" max="400" step="any">
-            <br/>
-            <label for="edit-speed2">Fan speed (%):</label>
-            <input id="edit-speed2" type="number" min="0" max="100" step="1">
-            <br/>
-            <button id="editPointBtn2">Change</button>
-            <button id="removePointBtn2" style="background: var(--color-error);">Remove</button>
-          </div>
-        </div>
-        <div class="section telemetry">
-          <div id="sensorInput2">Nozzle temperature: —</div>
-          <div>Output: <span id="speedValue2">—</span> %</div>
-        </div>
-      </section>
-    </div>
-
-    <div id="toggleTab" class="tab-content active">
-      <div class="toggles-container">
-        <form id='settings-form' method='POST' onsubmit='return submitOptions(event);'>
+      <section id="toggleTab" class="tab-content">
+        <div class="headline">
           <h1>Settings</h1>
-          <p id="settings-status" role="status">Loading settings...</p>
+        </div>
+        <form id="settings-form" onsubmit="return submitOptions(event,'settings')"><p id="settings-status" role="status"></p>
           <fieldset id="settings-fields" disabled>
-          <section class="printer-information">
-            <h2>Printer Information</h2>
-            <div class="printer-option-row">
-              <label for="printerip">Printer IP</label>
-              <input type='text' id='printerip' name='ip' title='Enter the IP address of your Bambulab Printer' value=''>
-            </div>
-            <div class="printer-option-row">
-              <label for="printercode">Printer Access Code</label>
-              <input type='text' id='printercode' name='code' title='Enter the access code of your Bambulab Printer' value=''>
-            </div>
-            <div class="printer-option-row">
-              <label for="printerserial">Printer Serial Number</label>
-              <input type='text' id='printerserial' name='serial' title='Enter the serial Number for your Bambulab Printer' value=''>
-            </div>
-          </section>
-
-          <div class="synchronization-row">
-            <label class="switch">
+            <section class="printer-information panel">
+              <h2>Printer Information</h2>
+              <div class="printer-option-row">
+                <label for="printerip">Printer IP</label>
+                <input type='text' id='printerip' name='ip' title='Enter the IP address of your Bambulab Printer' value=''>
+              </div>
+              <div class="printer-option-row">
+                <label for="printercode">Printer Access Code</label>
+                <input type='text' id='printercode' name='code' title='Enter the access code of your Bambulab Printer' value=''>
+              </div>
+              <div class="printer-option-row">
+                <label for="printerserial">Printer Serial Number</label>
+                <input type='text' id='printerserial' name='serial' title='Enter the serial Number for your Bambulab Printer' value=''>
+              </div>
+            </section>
+            <section class="panel">
+              <h2>Debugging</h2>
+              <div class="fan-option-row">
+                <label class="switch">
+                <input type="checkbox" id="debuging" name="debuging" aria-describedby="debugging-help">
+                <span class="slider round"></span>
+                </label>
+                <label for="debuging">Debugging</label>
+              </div>
+              <div class="fan-option-row">
+                <label class="switch">
+                <input type="checkbox" id="debugingchange" name="debugingchange" aria-describedby="debugging-help">
+                <span class="slider round"></span>
+                </label>
+                <label for="debugingchange">Debug OnChange Events</label>
+              </div>
+              <div class="fan-option-row">
+                <label class="switch">
+                <input type="checkbox" id="mqttdebug" name="mqttdebug" aria-describedby="debugging-help">
+                <span class="slider round"></span>
+                </label>
+                <label for="mqttdebug">MQTT Logging</label>
+              </div>
+              <p id="debugging-help" class="hint">Debugging logs connections and a health report every five seconds. Enable the detail switches to include fan changes or printer reports.</p>
+            </section>
+          </fieldset><input type="submit" id="saveOptions" value="Save Settings" disabled>
+        </form>
+      </section>
+      <section id="fanGraphTab" class="tab-content">
+        <div class="headline">
+          <h1>Fans</h1>
+        </div>
+        <form id="fans-form" onsubmit="return submitOptions(event,'fans')">
+          <fieldset id="fans-fields" disabled>
+            <div class="synchronization-row">
+              <label class="switch">
               <input type="checkbox" id="fansSynchronized" name="fansSynchronized" role="switch" aria-label="Synchronize Fans" checked>
               <span class="slider round"></span>
-            </label>
-            <label for="fansSynchronized">Synchronize Fans</label>
-          </div>
-          <section class="fan-features">
-            <h2 id="fan1FeaturesTitle" hidden></h2>
-            <div class="fan-option-row static-speed-row">
-              <label class="switch">
-                <input type="checkbox" id="staticfan" name="staticfan" role="switch" aria-label="Fan 1 static speed On/Off">
-                <span class="slider round"></span>
               </label>
-              <label for="staticfan">Static Fan Speed</label>
-              <div class="fan-parameters static-speed-values">
-                <input type="number" id="staticfanspeed" name="staticfanspeed" min="0" max="100" step="1" value="0" required aria-label="Fan 1 static speed percent">
-                <span>%</span>
+              <label for="fansSynchronized">Synchronize Fans</label>
+            </div>
+            <div class="graph-status">
+              <p id="mode-status" role="status"></p>
+              <p id="curve-status" role="status">Loading fan curves...</p>
+              <button type="button" id="retryCurves" hidden>Retry loading curves</button>
+            </div>
+            <div class="fan-columns">
+              <div class="fan-pair">
+                <section class="fan-features panel">
+                  <h2 id="fan1FeaturesTitle" hidden>
+                  </h2>
+                  <div class="fan-option-row static-speed-row">
+                    <label class="switch">
+                    <input type="checkbox" id="staticfan" name="staticfan" role="switch" aria-label="Fan 1 static speed On/Off">
+                    <span class="slider round"></span>
+                    </label>
+                    <label for="staticfan">Static Fan Speed</label>
+                    <div class="fan-parameters static-speed-values">
+                      <input type="number" id="staticfanspeed" name="staticfanspeed" min="0" max="100" step="1" value="0" required aria-label="Fan 1 static speed percent">
+                      <span>%</span>
+                    </div>
+                  </div>
+                  <div class="fan-option-row follow-fan-row">
+                    <label class="switch">
+                    <input type="checkbox" id="followPrinterFan" name="followPrinterFan" role="switch" aria-label="Fan 1 follow printer fan On/Off">
+                    <span class="slider round"></span>
+                    </label>
+                    <label for="followPrinterFan">Follow Printer Fan</label>
+                    <select class="fan-parameters" id="printerFanSource" name="printerFanSource" aria-label="Fan 1 printer fan source">
+                    <option value="part">Part Cooling Fan</option>
+                    <option value="auxiliary">Auxiliary Cooling Fan</option>
+                    <option value="chamber" selected>Chamber/Exhaust Fan</option>
+                    <option value="heatbreak">Hotend/Heatbreak Fan</option>
+                    </select>
+                  </div>
+                  <div class="fan-option-row post-print-row">
+                    <label class="switch">
+                    <input type="checkbox" id="postPrint" name="postPrint" role="switch" aria-label="Fan 1 Post Print On/Off">
+                    <span class="slider round"></span>
+                    </label>
+                    <label for="postPrint">Post Print</label>
+                    <div class="fan-parameters post-print-values">
+                      <span>Run for</span>
+                      <input type="number" id="postPrintSeconds" name="postPrintSeconds" min="1" max="86400" step="1" value="600" required aria-label="Fan 1 Post Print seconds">
+                      <span>seconds at</span>
+                      <input type="number" id="postPrintSpeed" name="postPrintSpeed" min="0" max="100" step="1" value="100" required aria-label="Fan 1 Post Print percent">
+                      <span>%</span>
+                    </div>
+                  </div>
+                </section>
+                <section id="graphPanel1" class="fangraph-container" aria-labelledby="graphTitle1">
+                  <h2 id="graphTitle1">Fan 1</h2>
+                  <p id="graphDescription1" class="graph-description"></p>
+                  <div class="chart-container">
+                    <canvas id="myChart1" role="img" aria-label="Fan 1 curve"></canvas>
+                  </div>
+                  <div class="controls">
+                    <h2>Manage Data Points</h2>
+                    <p id="curve-status1" class="curve-status" role="status"></p>
+                    <label for="pointSelect1">Select point:</label>
+                    <select id="pointSelect1" aria-label="Fan 1 curve point" disabled><option value="">Choose a point…</option></select>
+                    <div class="section">
+                      <button type="button" id="createPointBtn1" disabled>Create New Point</button>
+                    </div>
+                    <div class="section" id="editSection1" style="display:none;">
+                      <h3 id="pointHeading1">Selected Point</h3>
+                      <label id="inputLabel1" for="edit-input1">Nozzle temperature (°C):</label>
+                      <input id="edit-input1" type="number" min="0" max="400" step="any">
+                      <br/>
+                      <label for="edit-speed1">Fan speed (%):</label>
+                      <input id="edit-speed1" type="number" min="0" max="100" step="1">
+                      <br/>
+                      <button type="button" id="editPointBtn1">Change</button>
+                      <button type="button" id="removePointBtn1" style="background: var(--color-error);">Remove</button>
+                    </div>
+                  </div>
+                  <div class="section telemetry">
+                    <div id="sensorInput1">Nozzle temperature: —</div>
+                    <div>Output: <span id="speedValue1">—</span> %</div>
+                  </div>
+                </section>
+              </div>
+              <div class="fan-pair">
+                <section id="fan2Features" class="fan-features panel" hidden>
+                  <h2>Fan 2</h2>
+                  <div class="fan-option-row static-speed-row">
+                    <label class="switch">
+                    <input type="checkbox" id="staticfan2" name="staticfan2" role="switch" aria-label="Fan 2 static speed On/Off" disabled>
+                    <span class="slider round"></span>
+                    </label>
+                    <label for="staticfan2">Static Fan Speed</label>
+                    <div class="fan-parameters static-speed-values">
+                      <input type="number" id="staticfanspeed2" name="staticfanspeed2" min="0" max="100" step="1" value="0" required aria-label="Fan 2 static speed percent" disabled>
+                      <span>%</span>
+                    </div>
+                  </div>
+                  <div class="fan-option-row follow-fan-row">
+                    <label class="switch">
+                    <input type="checkbox" id="followPrinterFan2" name="followPrinterFan2" role="switch" aria-label="Fan 2 follow printer fan On/Off" disabled>
+                    <span class="slider round"></span>
+                    </label>
+                    <label for="followPrinterFan2">Follow Printer Fan</label>
+                    <select class="fan-parameters" id="printerFanSource2" name="printerFanSource2" aria-label="Fan 2 printer fan source" disabled>
+                    <option value="part">Part Cooling Fan</option>
+                    <option value="auxiliary">Auxiliary Cooling Fan</option>
+                    <option value="chamber" selected>Chamber/Exhaust Fan</option>
+                    <option value="heatbreak">Hotend/Heatbreak Fan</option>
+                    </select>
+                  </div>
+                  <div class="fan-option-row post-print-row">
+                    <label class="switch">
+                    <input type="checkbox" id="postPrint2" name="postPrint2" role="switch" aria-label="Fan 2 Post Print On/Off" disabled>
+                    <span class="slider round"></span>
+                    </label>
+                    <label for="postPrint2">Post Print</label>
+                    <div class="fan-parameters post-print-values">
+                      <span>Run for</span>
+                      <input type="number" id="postPrintSeconds2" name="postPrintSeconds2" min="1" max="86400" step="1" value="600" required aria-label="Fan 2 Post Print seconds" disabled>
+                      <span>seconds at</span>
+                      <input type="number" id="postPrintSpeed2" name="postPrintSpeed2" min="0" max="100" step="1" value="100" required aria-label="Fan 2 Post Print percent" disabled>
+                      <span>%</span>
+                    </div>
+                  </div>
+                </section>
+                <section id="graphPanel2" class="fangraph-container" aria-labelledby="graphTitle2" hidden>
+                  <h2 id="graphTitle2">Fan 2</h2>
+                  <p id="graphDescription2" class="graph-description"></p>
+                  <div class="chart-container">
+                    <canvas id="myChart2" role="img" aria-label="Fan 2 curve"></canvas>
+                  </div>
+                  <div class="controls">
+                    <h2>Manage Data Points</h2>
+                    <p id="curve-status2" class="curve-status" role="status"></p>
+                    <label for="pointSelect2">Select point:</label>
+                    <select id="pointSelect2" aria-label="Fan 2 curve point" disabled><option value="">Choose a point…</option></select>
+                    <div class="section">
+                      <button type="button" id="createPointBtn2" disabled>Create New Point</button>
+                    </div>
+                    <div class="section" id="editSection2" style="display:none;">
+                      <h3 id="pointHeading2">Selected Point</h3>
+                      <label id="inputLabel2" for="edit-input2">Nozzle temperature (°C):</label>
+                      <input id="edit-input2" type="number" min="0" max="400" step="any">
+                      <br/>
+                      <label for="edit-speed2">Fan speed (%):</label>
+                      <input id="edit-speed2" type="number" min="0" max="100" step="1">
+                      <br/>
+                      <button type="button" id="editPointBtn2">Change</button>
+                      <button type="button" id="removePointBtn2" style="background: var(--color-error);">Remove</button>
+                    </div>
+                  </div>
+                  <div class="section telemetry">
+                    <div id="sensorInput2">Nozzle temperature: —</div>
+                    <div>Output: <span id="speedValue2">—</span> %</div>
+                  </div>
+                </section>
               </div>
             </div>
-            <div class="fan-option-row follow-fan-row">
-              <label class="switch">
-                <input type="checkbox" id="followPrinterFan" name="followPrinterFan" role="switch" aria-label="Fan 1 follow printer fan On/Off">
-                <span class="slider round"></span>
-              </label>
-              <label for="followPrinterFan">Follow Printer Fan</label>
-              <select class="fan-parameters" id="printerFanSource" name="printerFanSource" aria-label="Fan 1 printer fan source">
-                <option value="part">Part Cooling Fan</option>
-                <option value="auxiliary">Auxiliary Cooling Fan</option>
-                <option value="chamber" selected>Chamber/Exhaust Fan</option>
-                <option value="heatbreak">Hotend/Heatbreak Fan</option>
-              </select>
-            </div>
-            <div class="fan-option-row post-print-row">
-              <label class="switch">
-                <input type="checkbox" id="postPrint" name="postPrint" role="switch" aria-label="Fan 1 Post Print On/Off">
-                <span class="slider round"></span>
-              </label>
-              <label for="postPrint">Post Print</label>
-              <div class="fan-parameters post-print-values">
-                <span>Run for</span>
-                <input type="number" id="postPrintSeconds" name="postPrintSeconds" min="1" max="86400" step="1" value="600" required aria-label="Fan 1 Post Print seconds">
-                <span>seconds at</span>
-                <input type="number" id="postPrintSpeed" name="postPrintSpeed" min="0" max="100" step="1" value="100" required aria-label="Fan 1 Post Print percent">
-                <span>%</span>
-              </div>
-            </div>
-          </section>
-          <section id="fan2Features" class="fan-features" hidden>
-            <h2>Fan 2</h2>
-            <div class="fan-option-row static-speed-row">
-              <label class="switch">
-                <input type="checkbox" id="staticfan2" name="staticfan2" role="switch" aria-label="Fan 2 static speed On/Off" disabled>
-                <span class="slider round"></span>
-              </label>
-              <label for="staticfan2">Static Fan Speed</label>
-              <div class="fan-parameters static-speed-values">
-                <input type="number" id="staticfanspeed2" name="staticfanspeed2" min="0" max="100" step="1" value="0" required aria-label="Fan 2 static speed percent" disabled>
-                <span>%</span>
-              </div>
-            </div>
-            <div class="fan-option-row follow-fan-row">
-              <label class="switch">
-                <input type="checkbox" id="followPrinterFan2" name="followPrinterFan2" role="switch" aria-label="Fan 2 follow printer fan On/Off" disabled>
-                <span class="slider round"></span>
-              </label>
-              <label for="followPrinterFan2">Follow Printer Fan</label>
-              <select class="fan-parameters" id="printerFanSource2" name="printerFanSource2" aria-label="Fan 2 printer fan source" disabled>
-                <option value="part">Part Cooling Fan</option>
-                <option value="auxiliary">Auxiliary Cooling Fan</option>
-                <option value="chamber" selected>Chamber/Exhaust Fan</option>
-                <option value="heatbreak">Hotend/Heatbreak Fan</option>
-              </select>
-            </div>
-            <div class="fan-option-row post-print-row">
-              <label class="switch">
-                <input type="checkbox" id="postPrint2" name="postPrint2" role="switch" aria-label="Fan 2 Post Print On/Off" disabled>
-                <span class="slider round"></span>
-              </label>
-              <label for="postPrint2">Post Print</label>
-              <div class="fan-parameters post-print-values">
-                <span>Run for</span>
-                <input type="number" id="postPrintSeconds2" name="postPrintSeconds2" min="1" max="86400" step="1" value="600" required aria-label="Fan 2 Post Print seconds" disabled>
-                <span>seconds at</span>
-                <input type="number" id="postPrintSpeed2" name="postPrintSpeed2" min="0" max="100" step="1" value="100" required aria-label="Fan 2 Post Print percent" disabled>
-                <span>%</span>
-              </div>
-            </div>
-          </section>
-
-          <h2>Debugging</h2>
-          <div class="fan-option-row">
-            <label class="switch">
-              <input type="checkbox" id="debuging" name="debuging" aria-describedby="debugging-help">
-              <span class="slider round"></span>
-            </label>
-            <label for="debuging">Debugging</label>
-          </div>
-          <div class="fan-option-row">
-            <label class="switch">
-              <input type="checkbox" id="debugingchange" name="debugingchange" aria-describedby="debugging-help">
-              <span class="slider round"></span>
-            </label>
-            <label for="debugingchange">Debug OnChange Events</label>
-          </div>
-          <div class="fan-option-row">
-            <label class="switch">
-              <input type="checkbox" id="mqttdebug" name="mqttdebug" aria-describedby="debugging-help">
-              <span class="slider round"></span>
-            </label>
-            <label for="mqttdebug">MQTT Logging</label>
-          </div>
-          <p id="debugging-help" style="font-size: .85rem; color: #555;">Debugging enables serial connection messages and a health report every five seconds. Debug OnChange Events adds fan speed and mode changes; MQTT Logging adds filtered printer reports. Both require Debugging. Save to apply.</p>
-          </fieldset>
-          <input type='submit' id='saveOptions' value='Save' disabled>
+          </fieldset><p id="fans-status" role="status"></p><input type="submit" id="saveFans" value="Save Fan Settings" disabled>
         </form>
-      </div>
+      </section>
+      <section id="wifiTab" class="tab-content">
+        <iframe id="wifi-frame" title="WiFi Setup">
+        </iframe>
+      </section>
+      <footer id="firmwareversion">Firmware Version: Loading...</footer>
+    </main>
+    <div id="save-notice" role="status" aria-live="polite" hidden>
     </div>
-    <p id="firmwareversion">Firmware Version: Loading...</p>
-    <p style="font-size: .85rem; width: 100%; max-width: var(--panel-max-width); text-align: left;"><a href="/wifi" style="color: #8bc8ff;">Wi-Fi setup</a></p>
-  </div> <!-- .container -->
-  <div id="save-notice" role="status" aria-live="polite" hidden></div>
-
   <script>
     const $ = id => document.getElementById(id);
-    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabButtons = document.querySelectorAll('.mast a');
     const tabContents = document.querySelectorAll('.tab-content');
     let optionsLoaded = false;
     let optionsSaving = false;
@@ -709,6 +374,8 @@
     function updateControls() {
       $('settings-fields').disabled = !optionsLoaded || optionsSaving || cancelingPostPrint;
       $('saveOptions').disabled = !optionsLoaded || optionsSaving || curveSaving || cancelingPostPrint;
+      $('fans-fields').disabled = $('settings-fields').disabled;
+      $('saveFans').disabled = $('saveOptions').disabled;
       renderFeatureSections();
       renderFanSources();
       for (const name of ['debugingchange', 'mqttdebug']) {
@@ -729,7 +396,7 @@
       }
       $('retryCurves').disabled = !optionsLoaded || optionsSaving || curveSaving || cancelingPostPrint;
       $('mode-status').textContent = optionsLoaded && pendingModeChange()
-        ? 'Save Settings to apply the fan mode change before editing curves.' : '';
+        ? 'Save Fan Settings to apply the mode change before editing curves.' : '';
     }
 
     function clearPointSelection(fan) {
@@ -752,13 +419,13 @@
     }
 
     function renderOperatingMode() {
-      $('fan2Indicator').hidden = fansSynchronized;
-      $('fan1Label').textContent = fansSynchronized ? 'Both fans' : 'Fan 1';
+      $('fan2Indicator').hidden = false;
+      $('fan1Label').textContent = 'Fan 1';
       $('fan1Label').className = fansSynchronized ? '' : 'fan-one';
       $('graphPanel2').hidden = fansSynchronized;
       renderFanSources();
       for (let fan = 0; fan < 2; ++fan) {
-        field('graphTitle', fan).textContent = fanTitle(fan);
+        field('graphTitle', fan).textContent = following(fan) ? 'Printer fan curve' : 'Temperature curve';
         field('graphDescription', fan).textContent = following(fan)
           ? printerFanLabels[activeFollowSources[fan]] + ' → output. 0% always stops the fan. Set the 1% point to the minimum running speed.'
           : 'Set the output speed for each nozzle temperature.';
@@ -773,19 +440,20 @@
       updateControls();
     }
 
-    function markSettingsChanged() {
-      if (!optionsLoaded || optionsSaving) return;
-      $('settings-status').textContent = 'Unsaved settings. Save to apply.';
+    function markSettingsChanged(event) {
+      if (!optionsLoaded || optionsSaving || !event.target?.name) return;
+      $(event.target?.form?.id === 'fans-form' ? 'fans-status' : 'settings-status').textContent = 'Unsaved settings. Save to apply.';
       updateControls();
     }
 
-    function updateOptions() {
+    function updateOptions(section) {
+      const feedback = $(section === 'fans' ? 'fans-status' : 'settings-status');
       optionsLoaded = false;
-      $('settings-status').textContent = 'Loading settings...';
+      feedback.textContent = 'Loading settings...';
       updateControls();
       const xhr = new XMLHttpRequest();
       function loadFailed() {
-        $('settings-status').textContent = 'Unable to load settings. Reload this page to retry.';
+        feedback.textContent = 'Unable to load settings. Reload this page to retry.';
         updateControls();
       }
       xhr.onreadystatechange = function() {
@@ -799,38 +467,42 @@
           }
         } catch (error) { loadFailed(); return; }
         $('firmwareversion').textContent = 'Firmware Version: ' + (config.firmwareversion || 'Unknown version');
-        $('printerip').value = config.ip;
-        $('printercode').value = config.code;
-        $('printerserial').value = config.id;
-        fansSynchronized = config.fansSynchronized !== false;
-        fan2Configured = config.fan2Configured === true;
-        fan2DraftInitialized = false;
-        $('fansSynchronized').checked = fansSynchronized;
-        $('staticfan').checked = config.staticfans === true;
-        $('staticfanspeed').value = config.staticfanspeed || 0;
-        $('staticfan2').checked = fan2Configured ? config.staticfans2 === true : config.staticfans === true;
-        $('staticfanspeed2').value = fan2Configured ? (config.staticfanspeed2 || 0) : (config.staticfanspeed || 0);
-        $('followPrinterFan').checked = config.followPrinterFan === true && !$('staticfan').checked;
-        $('printerFanSource').value = printerFanLabels[config.printerFanSource] ? config.printerFanSource : 'chamber';
-        $('followPrinterFan2').checked = fan2Configured
-          ? config.followPrinterFan2 === true && !$('staticfan2').checked : $('followPrinterFan').checked;
-        $('printerFanSource2').value = fan2Configured
-          ? (printerFanLabels[config.printerFanSource2] ? config.printerFanSource2 : 'chamber') : $('printerFanSource').value;
-        activeFollowSources = [
-          $('followPrinterFan').checked ? $('printerFanSource').value : null,
-          $('followPrinterFan2').checked ? $('printerFanSource2').value : null
-        ];
-        for (const suffix of ['', '2']) {
-          const sourceSuffix = suffix && fan2Configured ? '2' : '';
-          $('postPrint' + suffix).checked = config['postPrint' + sourceSuffix] === true;
-          $('postPrintSeconds' + suffix).value = config['postPrintSeconds' + sourceSuffix] ?? 600;
-          $('postPrintSpeed' + suffix).value = config['postPrintSpeed' + sourceSuffix] ?? 100;
+        if (section !== 'fans') {
+          $('printerip').value = config.ip;
+          $('printercode').value = config.code;
+          $('printerserial').value = config.id;
+          for (const name of ['debuging', 'debugingchange', 'mqttdebug']) $(name).checked = config[name] === true;
         }
-        for (const name of ['debuging', 'debugingchange', 'mqttdebug']) $(name).checked = config[name] === true;
+        if (section !== 'settings') {
+          fansSynchronized = config.fansSynchronized !== false;
+          fan2Configured = config.fan2Configured === true;
+          fan2DraftInitialized = false;
+          $('fansSynchronized').checked = fansSynchronized;
+          $('staticfan').checked = config.staticfans === true;
+          $('staticfanspeed').value = config.staticfanspeed || 0;
+          $('staticfan2').checked = fan2Configured ? config.staticfans2 === true : config.staticfans === true;
+          $('staticfanspeed2').value = fan2Configured ? (config.staticfanspeed2 || 0) : (config.staticfanspeed || 0);
+          $('followPrinterFan').checked = config.followPrinterFan === true && !$('staticfan').checked;
+          $('printerFanSource').value = printerFanLabels[config.printerFanSource] ? config.printerFanSource : 'chamber';
+          $('followPrinterFan2').checked = fan2Configured
+            ? config.followPrinterFan2 === true && !$('staticfan2').checked : $('followPrinterFan').checked;
+          $('printerFanSource2').value = fan2Configured
+            ? (printerFanLabels[config.printerFanSource2] ? config.printerFanSource2 : 'chamber') : $('printerFanSource').value;
+          activeFollowSources = [
+            $('followPrinterFan').checked ? $('printerFanSource').value : null,
+            $('followPrinterFan2').checked ? $('printerFanSource2').value : null
+          ];
+          for (const suffix of ['', '2']) {
+            const sourceSuffix = suffix && fan2Configured ? '2' : '';
+            $('postPrint' + suffix).checked = config['postPrint' + sourceSuffix] === true;
+            $('postPrintSeconds' + suffix).value = config['postPrintSeconds' + sourceSuffix] ?? 600;
+            $('postPrintSpeed' + suffix).value = config['postPrintSpeed' + sourceSuffix] ?? 100;
+          }
+        }
         optionsLoaded = true;
-        $('settings-status').textContent = '';
-        renderOperatingMode();
-        fetchFanConfig();
+        feedback.textContent = '';
+        if (section === 'settings') updateControls();
+        else { renderOperatingMode(); fetchFanConfig(); }
       };
       xhr.open('GET', '/getOptions', true);
       xhr.timeout = 30000;
@@ -839,37 +511,44 @@
       xhr.send();
     }
 
-    function submitOptions(event) {
+    function submitOptions(event, section) {
+      const feedback = $(section === 'fans' ? 'fans-status' : 'settings-status');
+      const form = $(section === 'fans' ? 'fans-form' : 'settings-form');
       event.preventDefault();
-      if (!optionsLoaded || optionsSaving || curveSaving || cancelingPostPrint || !$('settings-form').reportValidity()) return false;
-      const parameters = new URLSearchParams(new FormData($('settings-form')));
-      parameters.set('fansSynchronized', $('fansSynchronized').checked ? 'on' : 'off');
-      parameters.set('staticfan', $('staticfan').checked ? 'on' : 'off');
-      parameters.set('followPrinterFan', $('followPrinterFan').checked ? 'on' : 'off');
-      parameters.set('postPrint', $('postPrint').checked ? 'on' : 'off');
-      // Keep the detail preferences when the master disables their controls.
-      for (const name of ['debuging', 'debugingchange', 'mqttdebug']) {
-        parameters.set(name, $(name).checked ? 'on' : 'off');
+      if (!optionsLoaded || optionsSaving || curveSaving || cancelingPostPrint || !form.reportValidity()) return false;
+      const parameters = new URLSearchParams(new FormData(form));
+      parameters.set('section', section);
+      if (section === 'fans') {
+        parameters.set('fansSynchronized', $('fansSynchronized').checked ? 'on' : 'off');
+        parameters.set('staticfan', $('staticfan').checked ? 'on' : 'off');
+        parameters.set('followPrinterFan', $('followPrinterFan').checked ? 'on' : 'off');
+        parameters.set('postPrint', $('postPrint').checked ? 'on' : 'off');
+        if (!$('fansSynchronized').checked) {
+          parameters.set('staticfan2', $('staticfan2').checked ? 'on' : 'off');
+          parameters.set('followPrinterFan2', $('followPrinterFan2').checked ? 'on' : 'off');
+          parameters.set('postPrint2', $('postPrint2').checked ? 'on' : 'off');
+        } else {
+          parameters.delete('staticfan2');
+          parameters.delete('staticfanspeed2');
+          parameters.delete('followPrinterFan2');
+          parameters.delete('printerFanSource2');
+          for (const name of ['postPrint2', 'postPrintSeconds2', 'postPrintSpeed2']) parameters.delete(name);
+        }
       }
-      if (!$('fansSynchronized').checked) {
-        parameters.set('staticfan2', $('staticfan2').checked ? 'on' : 'off');
-        parameters.set('followPrinterFan2', $('followPrinterFan2').checked ? 'on' : 'off');
-        parameters.set('postPrint2', $('postPrint2').checked ? 'on' : 'off');
-      } else {
-        parameters.delete('staticfan2');
-        parameters.delete('staticfanspeed2');
-        parameters.delete('followPrinterFan2');
-        parameters.delete('printerFanSource2');
-        for (const name of ['postPrint2', 'postPrintSeconds2', 'postPrintSpeed2']) parameters.delete(name);
+      if (section === 'settings') {
+        // Keep the detail preferences when the master disables their controls.
+        for (const name of ['debuging', 'debugingchange', 'mqttdebug']) {
+          parameters.set(name, $(name).checked ? 'on' : 'off');
+        }
       }
       optionsSaving = true;
       hideSaveNotice();
-      $('settings-status').textContent = 'Saving settings...';
+      feedback.textContent = 'Saving settings...';
       updateControls();
       const xhr = new XMLHttpRequest();
       function saveFailed(message) {
         optionsSaving = false;
-        $('settings-status').textContent = message || 'Unable to confirm the save. Reload settings before retrying.';
+        feedback.textContent = message || 'Unable to confirm the save. Reload settings before retrying.';
         updateControls();
       }
       xhr.onreadystatechange = function() {
@@ -877,7 +556,7 @@
         if (xhr.status !== 200) { saveFailed(xhr.responseText); return; }
         optionsSaving = false;
         showSaveNotice('Settings saved successfully.');
-        updateOptions();
+        updateOptions(section);
         fetchSensorData();
       };
       xhr.open('POST', '/submitOptions', true);
@@ -929,7 +608,7 @@
         followCurves = loadedFollow;
         fansSynchronized = config.fansSynchronized !== false;
         curvesLoaded = true;
-        $('curve-status').textContent = editors[0].chart ? '' : 'Chart could not load. Check your connection and reload this page.';
+        $('curve-status').textContent = editors[0].chart ? '' : 'Chart could not load. Reload this page to retry.';
         renderOperatingMode();
       } catch (error) {
         if (request !== curveRequest) return;
@@ -940,7 +619,7 @@
     }
 
     function updateChart() {
-      const colors = ['#1565c0', '#b85600'];
+      const colors = ['#178453', '#bb581c'];
       editors.forEach((editor, fan) => {
         if (!editor.chart) return;
         const points = activeCurve(fan);
@@ -964,14 +643,14 @@
     function initChart() {
       if (editors[0].chart) return;
       if (typeof Chart === 'undefined') {
-        $('curve-status').textContent = 'Chart could not load. Check your connection and reload this page.';
+        $('curve-status').textContent = 'Chart could not load. Reload this page to retry.';
         return;
       }
       editors.forEach((editor, fan) => {
         editor.chart = new Chart(field('myChart', fan), {
           type: 'line', data: { datasets: [] },
           options: {
-            responsive: true,
+            responsive: true, animation: false,
             scales: {
               x: { type: 'linear', min: 0, max: 400, title: { display: true, text: 'Nozzle temperature (°C)' } },
               y: { min: 0, max: 100, title: { display: true, text: 'Fan speed (%)' } }
@@ -1135,7 +814,7 @@
       field('fanButton', fan).addEventListener('click', () => cancelPostPrint(fan));
     }
 
-    $('fansSynchronized').addEventListener('change', () => {
+    $('fansSynchronized').addEventListener('change', event => {
       if (!$('fansSynchronized').checked && !fan2Configured && !fan2DraftInitialized) {
         $('staticfan2').checked = $('staticfan').checked;
         $('staticfanspeed2').value = $('staticfanspeed').value;
@@ -1146,17 +825,18 @@
         $('postPrintSpeed2').value = $('postPrintSpeed').value;
         fan2DraftInitialized = true;
       }
-      markSettingsChanged();
+      markSettingsChanged(event);
     });
+    $('fans-form').addEventListener('input', markSettingsChanged);
     $('settings-form').addEventListener('input', markSettingsChanged);
     $('debuging').addEventListener('change', markSettingsChanged);
     for (const suffix of ['', '2']) {
       $('postPrint' + suffix).addEventListener('change', markSettingsChanged);
       $('printerFanSource' + suffix).addEventListener('change', markSettingsChanged);
       for (const [name, other] of [['staticfan', 'followPrinterFan'], ['followPrinterFan', 'staticfan']]) {
-        $(name + suffix).addEventListener('change', () => {
+        $(name + suffix).addEventListener('change', event => {
           if ($(name + suffix).checked) $(other + suffix).checked = false;
-          markSettingsChanged();
+          markSettingsChanged(event);
         });
       }
     }
@@ -1196,13 +876,28 @@
       });
     });
     $('retryCurves').addEventListener('click', fetchFanConfig);
-    tabButtons.forEach(button => button.addEventListener('click', () => {
-      tabButtons.forEach(item => item.classList.remove('active'));
-      tabContents.forEach(item => item.classList.remove('active'));
-      button.classList.add('active');
-      $(button.dataset.tab).classList.add('active');
-      if (button.dataset.tab === 'fanGraphTab') editors.forEach(editor => editor.chart?.resize());
+    function selectTab(path) {
+      const selected = Array.from(tabButtons).find(link => link.pathname === path) || tabButtons[0];
+      if (!selected) return;
+      tabButtons.forEach(link => {
+        if (link === selected) link.setAttribute('aria-current','page');
+        else link.removeAttribute('aria-current');
+      });
+      tabContents.forEach(panel => panel.classList.toggle('active', panel.id === selected.dataset.tab));
+      if (selected.dataset.tab === 'fanGraphTab') editors.forEach(editor => editor.chart?.resize());
+      if (selected.dataset.tab === 'wifiTab' && !$('wifi-frame').getAttribute('src')) $('wifi-frame').src = '/wifi?embedded=1';
+      window.dispatchEvent(new Event('tabselected'));
+    }
+    tabButtons.forEach(link => link.addEventListener('click', event => {
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      history.pushState(null,'',link.pathname);
+      selectTab(location.pathname);
     }));
+    if (tabButtons.length) {
+      selectTab(location.pathname);
+      window.addEventListener('popstate', () => selectTab(location.pathname));
+    }
     window.addEventListener('DOMContentLoaded', initChart);
     // Settings and telemetry start without waiting for images or the chart library.
     updateOptions();
@@ -1210,92 +905,4 @@
     setInterval(fetchSensorData, 1000);
   </script>
 
-  <!-- PARTICLE BACKGROUND SCRIPT -->
-  <script>
-    const canvas = document.getElementById('particleCanvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    let particlesArray = [];
-    const numberOfParticles = 100;
-
-    class Particle {
-      constructor(x, y, directionX, directionY, size, color) {
-        this.x = x;
-        this.y = y;
-        this.directionX = directionX;
-        this.directionY = directionY;
-        this.size = size;
-        this.color = color;
-      }
-      draw() {
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
-        ctx.fill();
-      }
-      update() {
-        if (this.x + this.size > canvas.width || this.x - this.size < 0) {
-          this.directionX = -this.directionX;
-        }
-        if (this.y + this.size > canvas.height || this.y - this.size < 0) {
-          this.directionY = -this.directionY;
-        }
-        this.x += this.directionX;
-        this.y += this.directionY;
-        this.draw();
-      }
-    }
-
-    function init() {
-      particlesArray = [];
-      for (let i = 0; i < numberOfParticles; i++) {
-        const size = Math.random() * 5 + 1;
-        const x = Math.random() * (canvas.width - size * 2) + size;
-        const y = Math.random() * (canvas.height - size * 2) + size;
-        const directionX = (Math.random() * 0.5) - 0.25;
-        const directionY = (Math.random() * 0.5) - 0.25;
-        const color = 'rgba(255, 255, 255, 0.8)';
-        particlesArray.push(new Particle(x, y, directionX, directionY, size, color));
-      }
-    }
-
-    function connect() {
-      for (let a = 0; a < particlesArray.length; a++) {
-        for (let b = a; b < particlesArray.length; b++) {
-          let distance = (particlesArray[a].x - particlesArray[b].x) ** 2
-                       + (particlesArray[a].y - particlesArray[b].y) ** 2;
-          if (distance < (canvas.width / 7) * (canvas.height / 7)) {
-            let opacityValue = 1 - (distance / 20000);
-            ctx.strokeStyle = `rgba(255, 255, 255, ${opacityValue})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(particlesArray[a].x, particlesArray[a].y);
-            ctx.lineTo(particlesArray[b].x, particlesArray[b].y);
-            ctx.stroke();
-          }
-        }
-      }
-    }
-
-    function animate() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (let i = 0; i < particlesArray.length; i++) {
-        particlesArray[i].update();
-      }
-      connect();
-      requestAnimationFrame(animate);
-    }
-
-    window.addEventListener('resize', () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      init();
-    });
-
-    init();
-    animate();
-  </script>
-</body>
-</html>
+<script src="/dashboard.js"></script></body></html>

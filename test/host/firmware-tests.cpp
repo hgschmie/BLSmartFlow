@@ -119,7 +119,10 @@ template<class T> void check(const char *name, T test) {
 #include "diagnostics-tests.h"
 #include "debug-log-tests.h"
 
+#include "history-tests.h"
+
 int main() {
+    historyTests();
     debugLoggingTests();
     diagnosticsTests();
     wifiTests();

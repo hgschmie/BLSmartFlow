@@ -86,6 +86,7 @@ inline bool parsePrinterReport(const uint8_t *payload, size_t length) {
         const double temperature = report["nozzle_temper"].as<double>();
         if (std::isfinite(temperature)) {
             printerVariables.nozzletemp = temperature;
+            printerVariables.nozzleKnown = true;
             changed = true;
         }
     }

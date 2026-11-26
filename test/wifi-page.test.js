@@ -13,7 +13,7 @@ function page() {
   }]));
   const requests=[], timers=[];
   const context=vm.createContext({
-    document:{ getElementById:id => elements.get(id) }, URLSearchParams,
+    window:{}, document:{ getElementById:id => elements.get(id) }, URLSearchParams,
     AbortSignal:{timeout:()=>({})}, setTimeout:fn=>timers.push(fn),
     fetch(url,options) { return new Promise((resolve,reject)=>requests.push({url,options,resolve,reject})); }
   });
@@ -57,7 +57,7 @@ test('save posts only Wi-Fi fields, prevents duplicates and reports persistence 
 test('connected state shows LAN link and failures clear stale connection indication', async()=>{
   const p=page(); await p.respond({...status,connected:true,ip:'192.168.2.83'});
   assert.equal(p.get('connectedHelp').hidden,false);
-  assert.equal(p.get('controllerLink').href,'http://192.168.2.83/fans');
+  assert.equal(p.get('controllerLink').href,'http://192.168.2.83/dashboard');
   p.timers.shift()(); p.requests.shift().reject(new Error('offline')); await settle();
   assert.equal(p.get('connectedHelp').hidden,true);
   assert.match(p.get('connectionStatus').textContent,/unreachable/);

@@ -5,6 +5,7 @@
 
 inline void printerCommunicationLost() {
     printerVariables.online = false;
+    printerVariables.nozzleKnown = false;
     printerVariables.printWasRunning = false;
     for (auto &run : printerVariables.postPrint) run = PostPrintRun{};
 }

@@ -26,10 +26,68 @@ void handleDiagnostics() {
     webServer.send(200, "application/json", body);
 }
 
-#include "../www/fanpage.h"
-#include "../www/updatePage.h"
-#include "../www/favicon.h"
-#include "../www/wifiPortal.h"
+#include "../www/www.h"
+#include "history.h"
+
+bool readUnsignedReportCursor(const String &text, uint32_t &value) {
+    if (!text.length() || text.length() > 10) return false;
+    uint64_t number = 0;
+    for (size_t i = 0; i < text.length(); ++i) {
+        if (text[i] < '0' || text[i] > '9') return false;
+        number = number * 10 + (text[i] - '0');
+    }
+    if (number > UINT32_MAX) return false;
+    value = number;
+    return true;
+}
+
+void handleHistory() {
+    constexpr size_t rangeCount = sizeof(historyRanges) / sizeof(historyRanges[0]);
+    const String selected = webServer.arg("range");
+    size_t index = 0;
+    while (index < rangeCount && selected != historyRanges[index].name) ++index;
+    if (index == rangeCount) {
+        webServer.send(400, "text/plain", "Unknown history range");
+        return;
+    }
+    const auto &range = historyRanges[index];
+    const uint32_t current = telemetryHistory.latest / range.seconds;
+    const uint32_t first = current >= range.capacity ? current - range.capacity + 1 : 0;
+    uint32_t start = first;
+    bool full = true;
+    uint32_t cursor;
+    if (webServer.arg("boot") == diagnosticBootId &&
+        readUnsignedReportCursor(webServer.arg("since"), cursor) && cursor >= first && cursor <= current) {
+        start = cursor; // Include the bucket that was incomplete on the previous poll.
+        full = false;
+    }
+    char row[160];
+    snprintf(row, sizeof(row), "{\"boot\":\"%s\",\"now\":%lu,\"cursor\":%lu,\"full\":%s,\"points\":[",
+        diagnosticBootId, (unsigned long)telemetryHistory.latest, (unsigned long)current, full ? "true" : "false");
+    webServer.sendHeader("Cache-Control", "no-store");
+    webServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    webServer.send(200, "application/json", "");
+    String chunk(row);
+    chunk.reserve(768);
+    for (uint32_t n = start; telemetryHistory.started && n <= current; ++n) {
+        const auto &b = telemetryHistory.slots[range.offset + n % range.capacity];
+        const char *comma = n == start ? "" : ",";
+        const unsigned long time = (unsigned long)n * range.seconds;
+        if (!b.count || b.number != n) {
+            snprintf(row, sizeof(row), "%s[%lu,null,null,null]", comma, time);
+        } else {
+            char temp[32] = "null";
+            if (!b.temperatureMissing) snprintf(temp, sizeof(temp), "%.2f", b.temperatureSum / b.count);
+            snprintf(row, sizeof(row), "%s[%lu,%s,%.2f,%.2f]", comma, time, temp,
+                double(b.fan1Sum) / b.count, double(b.fan2Sum) / b.count);
+        }
+        chunk += row;
+        if (chunk.length() > 600) { webServer.sendContent(chunk); chunk = ""; }
+    }
+    chunk += "]}";
+    webServer.sendContent(chunk);
+    webServer.sendContent("");
+}
 
 void handleWifiPage() {
     webServer.sendHeader("Cache-Control", "no-store");
@@ -221,44 +279,53 @@ void submitOptions() {
         return;
     }
     PrinterConfig candidate = printerConfig;
-    if (!readStringArgument("ip", candidate.printerIP) ||
-        !readStringArgument("code", candidate.accessCode) ||
-        !readStringArgument("serial", candidate.serialNumber)) {
-        webServer.send(400, "text/plain", "Printer field is too long");
+    const String section = webServer.arg("section");
+    if (section.length() && section != "settings" && section != "fans") {
+        webServer.send(400, "text/plain", "Unknown settings section");
         return;
     }
-    for (size_t i = 0; i < strlen(candidate.serialNumber); ++i) {
-        candidate.serialNumber[i] = toupper(static_cast<unsigned char>(candidate.serialNumber[i]));
-    }
-    // Legacy forms omit unchecked Fan 1 checkboxes.
-    candidate.staticFan = false;
-    if (!readBoolArgument("fansSynchronized", candidate.fansSynchronized) ||
-        !readFanModeArguments("staticfan", "followPrinterFan", "printerFanSource",
-            candidate.staticFan, candidate.followPrinterFan, candidate.printerFanSource) ||
-        !readSpeedArgument("staticfanspeed", candidate.staticFanSpeed)) {
-        webServer.send(400, "text/plain", "Invalid Fan 1 settings; choose one override, a valid printer fan, and an integer speed from 0 to 100");
-        return;
-    }
-    if (!readPostPrintArguments("postPrint", "postPrintSeconds", "postPrintSpeed", candidate.postPrint)) {
-        webServer.send(400, "text/plain", "Invalid Fan 1 Post Print settings; use 1 to 86400 whole seconds and a speed from 0 to 100");
-        return;
-    }
-    if (!candidate.fansSynchronized) {
-        initializeSecondFan(candidate);
-        if (!readFanModeArguments("staticfan2", "followPrinterFan2", "printerFanSource2",
-                candidate.staticFan2, candidate.followPrinterFan2, candidate.printerFanSource2) ||
-            !readSpeedArgument("staticfanspeed2", candidate.staticFanSpeed2)) {
-            webServer.send(400, "text/plain", "Invalid Fan 2 settings; choose one override, a valid printer fan, and an integer speed from 0 to 100");
+    if (section != "fans") {
+        if (!readStringArgument("ip", candidate.printerIP) ||
+            !readStringArgument("code", candidate.accessCode) ||
+            !readStringArgument("serial", candidate.serialNumber)) {
+            webServer.send(400, "text/plain", "Printer field is too long");
             return;
         }
-        if (!readPostPrintArguments("postPrint2", "postPrintSeconds2", "postPrintSpeed2", candidate.postPrint2)) {
-            webServer.send(400, "text/plain", "Invalid Fan 2 Post Print settings; use 1 to 86400 whole seconds and a speed from 0 to 100");
+        for (size_t i = 0; i < strlen(candidate.serialNumber); ++i) {
+            candidate.serialNumber[i] = toupper(static_cast<unsigned char>(candidate.serialNumber[i]));
+        }
+        candidate.debuging = (webServer.arg("debuging") == "on");
+        candidate.debugingchange = (webServer.arg("debugingchange") == "on");
+        candidate.mqttdebug = (webServer.arg("mqttdebug") == "on");
+    }
+    if (section != "settings") {
+        // Legacy forms omit unchecked Fan 1 checkboxes.
+        candidate.staticFan = false;
+        if (!readBoolArgument("fansSynchronized", candidate.fansSynchronized) ||
+            !readFanModeArguments("staticfan", "followPrinterFan", "printerFanSource",
+                candidate.staticFan, candidate.followPrinterFan, candidate.printerFanSource) ||
+            !readSpeedArgument("staticfanspeed", candidate.staticFanSpeed)) {
+            webServer.send(400, "text/plain", "Invalid Fan 1 settings; choose one override, a valid printer fan, and an integer speed from 0 to 100");
             return;
         }
+        if (!readPostPrintArguments("postPrint", "postPrintSeconds", "postPrintSpeed", candidate.postPrint)) {
+            webServer.send(400, "text/plain", "Invalid Fan 1 Post Print settings; use 1 to 86400 whole seconds and a speed from 0 to 100");
+            return;
+        }
+        if (!candidate.fansSynchronized) {
+            initializeSecondFan(candidate);
+            if (!readFanModeArguments("staticfan2", "followPrinterFan2", "printerFanSource2",
+                    candidate.staticFan2, candidate.followPrinterFan2, candidate.printerFanSource2) ||
+                !readSpeedArgument("staticfanspeed2", candidate.staticFanSpeed2)) {
+                webServer.send(400, "text/plain", "Invalid Fan 2 settings; choose one override, a valid printer fan, and an integer speed from 0 to 100");
+                return;
+            }
+            if (!readPostPrintArguments("postPrint2", "postPrintSeconds2", "postPrintSpeed2", candidate.postPrint2)) {
+                webServer.send(400, "text/plain", "Invalid Fan 2 Post Print settings; use 1 to 86400 whole seconds and a speed from 0 to 100");
+                return;
+            }
+        }
     }
-    candidate.debuging = (webServer.arg("debuging") == "on");
-    candidate.debugingchange = (webServer.arg("debugingchange") == "on");
-    candidate.mqttdebug = (webServer.arg("mqttdebug") == "on");
     if (!saveFileSystem(candidate)) {
         webServer.send(500, "text/plain", "Failed to save settings to flash");
         return;
@@ -357,6 +424,13 @@ void handleCancelPostPrint() {
     handleSensorData(); // Applies normal control immediately and returns fresh speeds.
 }
 
+void serveCompressedAsset(const char *path, const char *mime, const uint8_t *data, size_t length) {
+    webServer.on(path, HTTP_GET, [mime, data, length]() {
+        webServer.sendHeader(F("Content-Encoding"), F("gzip"));
+        webServer.send_P(200, mime, reinterpret_cast<const char *>(data), length);
+    });
+}
+
 void setupWebserver(){
     Serial.println(F("Setting up webserver"));
     
@@ -368,6 +442,14 @@ void setupWebserver(){
     webServer.on("/wifi", HTTP_GET, handleWifiPage);
     webServer.on("/wifi/status", HTTP_GET, handleWifiStatus);
     webServer.on("/wifi/save", HTTP_POST, handleSaveWifi);
+    serveCompressedAsset("/chart.js", "application/javascript", chart_js_gz, chart_js_gz_len);
+    serveCompressedAsset("/dashboard.js", "application/javascript", dashboard_js_gz, dashboard_js_gz_len);
+    serveCompressedAsset("/fan_shell.png", "image/png", fan_shell_png_gz, fan_shell_png_gz_len);
+    serveCompressedAsset("/fan_blades.png", "image/png", fan_blades_png_gz, fan_blades_png_gz_len);
+    serveCompressedAsset("/theme.css", "text/css", theme_css_gz, theme_css_gz_len);
+    webServer.on("/dashboard", HTTP_GET, handleSetup);
+    webServer.on("/settings", HTTP_GET, handleSetup);
+    webServer.on("/history", HTTP_GET, handleHistory);
     webServer.on("/diagnostics", HTTP_GET, handleDiagnostics);
     webServer.onNotFound([]() {
         // URI excludes query parameters; do not log submitted settings/secrets.
